@@ -14,10 +14,16 @@
   "dependencies": {
     "@arayeshgar/core": "workspace:*",
     "@arayeshgar/db": "workspace:*",
+    "@arayeshgar/themes": "workspace:*",
+    "@fontsource/estedad": "^5.3.0",
+    "@fontsource/vazirmatn": "^5.3.0",
     "drizzle-orm": "^0.45.0",
+    "iron-session": "^9.0.1",
     "next": "^16.3.0",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "sahel-font": "^3.4.0",
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "@arayeshgar/config": "workspace:*",

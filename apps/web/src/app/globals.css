@@ -1,9 +1,29 @@
 @import "tailwindcss";
 
-:root {
-  --font-body: "Vazirmatn", system-ui, sans-serif;
-  --font-heading: "Estedad", "Vazirmatn", system-ui, sans-serif;
+/* Self-hosted Persian fonts (OFL). Arabic subsets only + Latin fallback from the same families. */
+@import "@fontsource/vazirmatn/400.css";
+@import "@fontsource/vazirmatn/500.css";
+@import "@fontsource/vazirmatn/700.css";
+@import "@fontsource/vazirmatn/800.css";
+@import "@fontsource/estedad/700.css";
+@import "@fontsource/estedad/800.css";
+@import "@fontsource/estedad/900.css";
+@import "sahel-font/dist/font-face.css";
+
+@theme {
+  --font-vazirmatn: "Vazirmatn", system-ui, sans-serif;
+  --font-estedad: "Estedad", "Vazirmatn", system-ui, sans-serif;
+  --font-sahel: "Sahel", "Vazirmatn", system-ui, sans-serif;
 }
+
+:root {
+  /* Overridden per tenant by <ThemeStyle/> */
+  --brand: #c9a227;
+  --brand-contrast: #0e0e10;
+  --font-body: var(--font-vazirmatn);
+  --font-heading: var(--font-estedad);
+}
+
 html {
   direction: rtl;
 }
@@ -12,10 +32,22 @@ body {
   line-height: 1.9;
   letter-spacing: 0;
   text-align: start;
+  -webkit-font-smoothing: antialiased;
 }
 h1,
 h2,
-h3 {
+h3,
+.font-heading {
   font-family: var(--font-heading);
   line-height: 1.5;
+}
+/* Persian digits everywhere via CSS (fallback to JS toPersianDigits where needed) */
+.fa-nums {
+  font-variant-numeric: tabular-nums;
+}
+input,
+button,
+select,
+textarea {
+  font: inherit;
 }

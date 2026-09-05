@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { db } from "@/lib/tenant";
+import { db } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 

@@ -7,7 +7,7 @@ export const metadata: Metadata = { title: "آرایشگر", description: "رز�
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="fa" dir="rtl">
-      <body className="min-h-dvh bg-neutral-950 text-neutral-100 antialiased">{children}</body>
+      <body className="min-h-dvh antialiased">{children}</body>
     </html>
   );
 }

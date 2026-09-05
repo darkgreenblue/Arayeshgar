@@ -1,15 +1,10 @@
 import "server-only";
-import { eq, or } from "drizzle-orm";
-import { createDb, tenants } from "@arayeshgar/db";
+import { cache } from "react";
+import { headers } from "next/headers";
+import { eq } from "drizzle-orm";
+import { tenants, type Tenant } from "@arayeshgar/db";
 import { getEnv } from "@arayeshgar/core";
-
-declare global {
-  var __arayeshgarDb: ReturnType<typeof createDb> | undefined;
-}
-export function db() {
-  if (!globalThis.__arayeshgarDb) globalThis.__arayeshgarDb = createDb(getEnv().DATABASE_URL);
-  return globalThis.__arayeshgarDb;
-}
+import { db } from "./db";
 
 export type HostKind =
   { kind: "platform" } | { kind: "tenant"; slug: string } | { kind: "custom"; host: string };
@@ -31,14 +26,33 @@ export function classifyHost(hostHeader: string, baseDomain: string): HostKind {
   return { kind: "custom", host };
 }
 
-export async function resolveTenant(hostHeader: string) {
-  const env = getEnv();
-  const k = classifyHost(hostHeader, env.BASE_DOMAIN);
-  if (k.kind === "platform") return { kind: "platform" as const, tenant: null };
-  const where =
-    k.kind === "tenant"
-      ? eq(tenants.slug, k.slug)
-      : or(eq(tenants.customDomain, k.host), eq(tenants.slug, "__never__"));
-  const tenant = await db().query.tenants.findFirst({ where });
+export type Resolved =
+  { kind: "platform"; tenant: null } | { kind: "tenant" | "custom"; tenant: Tenant | null };
+
+export async function resolveTenantByHost(hostHeader: string): Promise<Resolved> {
+  const k = classifyHost(hostHeader, getEnv().BASE_DOMAIN);
+  if (k.kind === "platform") return { kind: "platform", tenant: null };
+  const tenant = await db().query.tenants.findFirst({
+    where: k.kind === "tenant" ? eq(tenants.slug, k.slug) : eq(tenants.customDomain, k.host),
+  });
   return { kind: k.kind, tenant: tenant ?? null };
+}
+
+/** Per-request memoized tenant from the incoming Host header. */
+export const currentTenant = cache(async (): Promise<Resolved> => {
+  const host = (await headers()).get("host") ?? "";
+  return resolveTenantByHost(host);
+});
+
+/** Throws a 404-ish error for pages that need a live tenant. */
+export async function requireTenant(): Promise<Tenant> {
+  const r = await currentTenant();
+  if (!r.tenant || r.tenant.status === "suspended") throw new TenantNotFoundError();
+  return r.tenant;
+}
+
+export class TenantNotFoundError extends Error {
+  constructor() {
+    super("tenant not found");
+  }
 }
