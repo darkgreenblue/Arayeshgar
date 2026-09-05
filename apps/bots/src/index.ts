@@ -5,7 +5,7 @@
  */
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
-import { getEnv, logger } from "@arayeshgar/core";
+import { getEnv, logger, startWorker, type Senders } from "@arayeshgar/core";
 import { createDb } from "@arayeshgar/db";
 import { sql } from "drizzle-orm";
 
@@ -33,8 +33,15 @@ serve({ fetch: app.fetch, port: env.BOTS_PORT }, (info) => {
   logger.info({ port: info.port }, "bots http listening");
 });
 
+// Worker: expire unpaid bookings, enqueue reminders, drain the notification outbox.
+// Channel senders (Telegram/Bale) are registered in phase 4; until then rows wait in the outbox.
+const senders: Senders = {};
+const stopWorker = startWorker(db, senders, env.WORKER_INTERVAL_SEC);
+logger.info({ intervalSec: env.WORKER_INTERVAL_SEC }, "worker started");
+
 const shutdown = (signal: string) => {
   logger.info({ signal }, "shutting down");
+  stopWorker();
   process.exit(0);
 };
 process.on("SIGTERM", () => shutdown("SIGTERM"));
