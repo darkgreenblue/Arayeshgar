@@ -22,6 +22,7 @@ pnpm tenant:create --example > tenant.json   # قالب آماده
 # فایل را ویرایش کنید (حداقل: slug، displayName، staff، services، adminPassword)
 pnpm tenant:create --file tenant.json
 ```
+
 خروجی، آدرس سایت و پنل و نام کاربری را چاپ می‌کند. خطاها فارسی و دقیق‌اند (مثلاً «این آدرس قبلاً استفاده شده»).
 
 `tenant.json` همان فیلدهای ویزارد است (اسکیمای zod در `packages/core/src/onboarding/schema.ts`).

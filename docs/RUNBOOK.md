@@ -1,6 +1,6 @@
 # RUNBOOK — بهره‌برداری و «چه کنم اگر …»
 
-## استقرار روی VPS (خلاصه؛ نسخه قدم‌به‌قدم بعد از دریافت مستندات آروان در فاز ۶)
+## استقرار روی VPS (خلاصه؛ نسخه قدم‌به‌قدم در `docs/DEPLOY.md`)
 
 ```bash
 git clone <repo> /opt/arayeshgar && cd /opt/arayeshgar

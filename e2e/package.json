@@ -1,0 +1,20 @@
+{
+  "name": "@arayeshgar/e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Golden-path end-to-end test: a customer books on the site, pays a deposit, the barber approves, the slot disappears.",
+  "scripts": {
+    "test": "playwright test",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@arayeshgar/config": "workspace:*",
+    "@arayeshgar/core": "workspace:*",
+    "@arayeshgar/db": "workspace:*",
+    "@playwright/test": "^1.63.0",
+    "drizzle-orm": "^0.45.0",
+    "postgres": "^3.4.7",
+    "typescript": "~5.9.0"
+  }
+}

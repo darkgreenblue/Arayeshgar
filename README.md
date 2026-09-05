@@ -11,6 +11,7 @@
 | `docs/RESEARCH.md`     | یافته‌های تحقیق: بله، هاستینگ، قالب‌ها، AI، اینستاگرام      |
 | `docs/ONBOARDING.md`   | چطور یک آرایشگر جدید را در ۵ دقیقه راه بیندازیم             |
 | `docs/RUNBOOK.md`      | «چه کنم اگر …» برای بهره‌بردار                              |
+| `docs/DEPLOY.md`       | راه‌اندازی روی سرور، قدم‌به‌قدم و بدون دانش فنی             |
 
 ## ساختار
 
@@ -22,6 +23,7 @@ packages/db     اسکیمای Drizzle، migration ها، seed
 packages/themes سه قالب سایت قابل تعویض
 deploy/         docker-compose، Caddyfile، بک‌آپ
 scripts/        bale-probe، tenant-create
+e2e/            تست سرتاسری سناریوی طلایی (Playwright)
 ```
 
 ## اجرای محلی (توسعه)
@@ -38,4 +40,5 @@ pnpm dev                                                 # web: http://demo.loca
 
 ```bash
 pnpm lint && pnpm format:check && pnpm typecheck && pnpm test
+pnpm test:e2e     # سناریوی طلایی با مرورگر واقعی (نیاز به build و Postgres)
 ```

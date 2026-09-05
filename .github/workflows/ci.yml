@@ -32,3 +32,32 @@ jobs:
       - run: pnpm db:migrate
       - run: pnpm test
       - run: pnpm build
+
+  e2e:
+    needs: check
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: arayeshgar
+          POSTGRES_PASSWORD: arayeshgar
+          POSTGRES_DB: arayeshgar_e2e
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U arayeshgar" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgres://arayeshgar:arayeshgar@localhost:5432/arayeshgar_e2e
+      SESSION_SECRET: e2e-secret-e2e-secret-e2e-secret-e2e-secret
+      BASE_DOMAIN: localhost
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:migrate
+      - run: pnpm --filter @arayeshgar/web build
+      - run: pnpm --filter @arayeshgar/e2e exec playwright install --with-deps chromium
+      - run: pnpm --filter @arayeshgar/e2e test

@@ -9,18 +9,19 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "pnpm -r --parallel --filter ./apps/* dev",
+    "bale:probe": "tsx scripts/bale-probe.ts",
     "build": "pnpm -r --filter ./packages/* --filter ./apps/* build",
-    "lint": "eslint .",
-    "format": "prettier --write .",
-    "format:check": "prettier --check .",
-    "typecheck": "pnpm -r typecheck",
-    "test": "pnpm -r test",
     "db:generate": "pnpm --filter @arayeshgar/db generate",
     "db:migrate": "pnpm --filter @arayeshgar/db migrate",
     "db:seed": "pnpm --filter @arayeshgar/db seed",
-    "bale:probe": "tsx scripts/bale-probe.ts",
-    "tenant:create": "tsx scripts/tenant-create.ts"
+    "dev": "pnpm -r --parallel --filter ./apps/* dev",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint .",
+    "tenant:create": "tsx scripts/tenant-create.ts",
+    "test": "pnpm -r --filter=!@arayeshgar/e2e test",
+    "test:e2e": "pnpm --filter @arayeshgar/e2e test",
+    "typecheck": "pnpm -r typecheck"
   },
   "devDependencies": {
     "@arayeshgar/core": "workspace:*",

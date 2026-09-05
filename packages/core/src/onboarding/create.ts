@@ -116,19 +116,17 @@ export async function createTenant(db: Db, input: OnboardingInput): Promise<Crea
 
       const hours = d.hours.length ? d.hours : [];
       if (hours.length) {
-        await tx
-          .insert(schedules)
-          .values(
-            staffRows.flatMap((st) =>
-              hours.map((h) => ({
-                tenantId: tenant.id,
-                staffId: st.id,
-                weekday: h.weekday,
-                startMin: h.startMin,
-                endMin: h.endMin,
-              })),
-            ),
-          );
+        await tx.insert(schedules).values(
+          staffRows.flatMap((st) =>
+            hours.map((h) => ({
+              tenantId: tenant.id,
+              staffId: st.id,
+              weekday: h.weekday,
+              startMin: h.startMin,
+              endMin: h.endMin,
+            })),
+          ),
+        );
       }
 
       await tx.insert(users).values({
