@@ -1,0 +1,36 @@
+{
+  "name": "arayeshgar",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Multi-tenant appointment booking platform for barbers: branded website + Telegram bot + Bale bot + admin panel, one source of truth.",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm -r --parallel --filter ./apps/* dev",
+    "build": "pnpm -r --filter ./packages/* --filter ./apps/* build",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "db:generate": "pnpm --filter @arayeshgar/db generate",
+    "db:migrate": "pnpm --filter @arayeshgar/db migrate",
+    "db:seed": "pnpm --filter @arayeshgar/db seed",
+    "bale:probe": "tsx scripts/bale-probe.ts",
+    "tenant:create": "tsx scripts/tenant-create.ts"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.0",
+    "@types/node": "^22.19.0",
+    "eslint": "^9.39.0",
+    "eslint-config-prettier": "^10.1.0",
+    "globals": "^16.3.0",
+    "prettier": "^3.6.0",
+    "tsx": "^4.20.0",
+    "typescript": "~5.9.0",
+    "typescript-eslint": "^8.46.0"
+  }
+}

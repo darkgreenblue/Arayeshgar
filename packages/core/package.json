@@ -1,0 +1,34 @@
+{
+  "name": "@arayeshgar/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Domain logic shared by web and bots: availability, booking engine, payments, notifications, feature flags, authz.",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./*": {
+      "types": "./src/*.ts",
+      "default": "./src/*.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@arayeshgar/db": "workspace:*",
+    "drizzle-orm": "^0.45.0",
+    "jalaali-js": "^2.0.0",
+    "pino": "^10.0.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@arayeshgar/config": "workspace:*",
+    "typescript": "~5.9.0",
+    "vitest": "^4.0.0"
+  }
+}

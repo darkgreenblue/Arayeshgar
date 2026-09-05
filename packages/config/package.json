@@ -1,0 +1,12 @@
+{
+  "name": "@arayeshgar/config",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared tsconfig presets.",
+  "files": [
+    "tsconfig.*.json"
+  ],
+  "exports": {
+    "./*": "./*"
+  }
+}

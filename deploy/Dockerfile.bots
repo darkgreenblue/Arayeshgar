@@ -1,0 +1,16 @@
+# Runs @arayeshgar/bots (also used for the one-shot migrate+seed job)
+FROM node:22-alpine AS base
+RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
+WORKDIR /app
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc ./
+COPY apps/bots/package.json apps/bots/
+COPY packages/core/package.json packages/core/
+COPY packages/db/package.json packages/db/
+COPY packages/config/package.json packages/config/
+COPY packages/themes/package.json packages/themes/
+RUN pnpm install --frozen-lockfile --filter @arayeshgar/bots... --filter @arayeshgar/db...
+COPY packages ./packages
+COPY apps/bots ./apps/bots
+ENV NODE_ENV=production SERVICE_NAME=bots
+EXPOSE 3001
+CMD ["pnpm", "--filter", "@arayeshgar/bots", "start"]

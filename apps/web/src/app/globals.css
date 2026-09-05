@@ -1,0 +1,21 @@
+@import "tailwindcss";
+
+:root {
+  --font-body: "Vazirmatn", system-ui, sans-serif;
+  --font-heading: "Estedad", "Vazirmatn", system-ui, sans-serif;
+}
+html {
+  direction: rtl;
+}
+body {
+  font-family: var(--font-body);
+  line-height: 1.9;
+  letter-spacing: 0;
+  text-align: start;
+}
+h1,
+h2,
+h3 {
+  font-family: var(--font-heading);
+  line-height: 1.5;
+}

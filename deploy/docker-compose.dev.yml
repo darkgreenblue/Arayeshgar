@@ -1,0 +1,13 @@
+# Local development: only Postgres in Docker; run apps with `pnpm dev`.
+services:
+  db:
+    image: postgres:16-alpine
+    ports: ["5432:5432"]
+    environment:
+      POSTGRES_USER: arayeshgar
+      POSTGRES_PASSWORD: arayeshgar
+      POSTGRES_DB: arayeshgar
+    volumes:
+      - pgdata_dev:/var/lib/postgresql/data
+volumes:
+  pgdata_dev:

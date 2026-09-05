@@ -1,0 +1,21 @@
+{
+  "name": "@arayeshgar/themes",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Three switchable site templates (night-gold, light-editorial, bold-modern) sharing one content schema.",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "echo 'no tests'"
+  },
+  "devDependencies": {
+    "@arayeshgar/config": "workspace:*",
+    "typescript": "~5.9.0"
+  }
+}

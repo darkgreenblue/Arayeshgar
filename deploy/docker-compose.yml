@@ -1,0 +1,78 @@
+# Production stack on one VPS. Usage (from repo root):
+#   cp .env.example .env && edit .env
+#   docker compose -f deploy/docker-compose.yml --env-file .env up -d --build
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-arayeshgar}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-arayeshgar}
+      POSTGRES_DB: ${POSTGRES_DB:-arayeshgar}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-arayeshgar}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build: { context: .., dockerfile: deploy/Dockerfile.bots }
+    command:
+      ["sh", "-c", "pnpm --filter @arayeshgar/db migrate && pnpm --filter @arayeshgar/db seed"]
+    env_file: ../.env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-arayeshgar}:${POSTGRES_PASSWORD:-arayeshgar}@db:5432/${POSTGRES_DB:-arayeshgar}
+    depends_on:
+      db: { condition: service_healthy }
+    restart: "no"
+
+  web:
+    build: { context: .., dockerfile: deploy/Dockerfile.web }
+    restart: unless-stopped
+    env_file: ../.env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-arayeshgar}:${POSTGRES_PASSWORD:-arayeshgar}@db:5432/${POSTGRES_DB:-arayeshgar}
+      UPLOADS_DIR: /data/uploads
+      NODE_ENV: production
+    volumes:
+      - uploads:/data/uploads
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    expose: ["3000"]
+
+  bots:
+    build: { context: .., dockerfile: deploy/Dockerfile.bots }
+    restart: unless-stopped
+    env_file: ../.env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-arayeshgar}:${POSTGRES_PASSWORD:-arayeshgar}@db:5432/${POSTGRES_DB:-arayeshgar}
+      UPLOADS_DIR: /data/uploads
+      NODE_ENV: production
+    volumes:
+      - uploads:/data/uploads
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    expose: ["3001"]
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443", "443:443/udp"]
+    environment:
+      BASE_DOMAIN: ${BASE_DOMAIN:-localhost}
+      ACME_EMAIL: ${ACME_EMAIL:-admin@example.com}
+      # For wildcard certs Caddy needs a DNS provider module; simplest path on Arvan/Cloudflare DNS
+      # is per-host certs (default below). See docs/RUNBOOK.md "TLS".
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [web, bots]
+
+volumes:
+  pgdata:
+  uploads:
+  caddy_data:
+  caddy_config:
