@@ -95,12 +95,12 @@ describe.skipIf(!hasDb)("admin modules (Postgres)", () => {
       startMin: 12 * 60,
       endMin: 14 * 60,
     });
-    let slots = await availableSlots(db, f.tenant, {
+    const slots1 = await availableSlots(db, f.tenant, {
       staffId: f.staffId,
       serviceId: f.serviceId,
       day,
     });
-    let starts = slots[0]!.starts.map((d) => d.getTime());
+    const starts = slots1[0]!.starts.map((d) => d.getTime());
     expect(starts).toContain(tomorrowAt(11).getTime());
     expect(starts).not.toContain(tomorrowAt(12, 30).getTime());
 
@@ -111,12 +111,12 @@ describe.skipIf(!hasDb)("admin modules (Postgres)", () => {
       kind: "closed",
       reason: "مرخصی",
     });
-    slots = await availableSlots(db, f.tenant, {
+    const slots2 = await availableSlots(db, f.tenant, {
       staffId: f.staffId,
       serviceId: f.serviceId,
       day: next,
     });
-    expect(slots[0]!.starts).toHaveLength(0);
+    expect(slots2[0]!.starts).toHaveLength(0);
   });
 
   it("staff editor stores an own deposit card and can issue a scoped login", async () => {

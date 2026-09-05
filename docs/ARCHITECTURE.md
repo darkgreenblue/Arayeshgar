@@ -170,6 +170,10 @@ confirmed ──▶ completed | cancelled (توسط مشتری تا X ساعت �
 | retry فراخوانی خارجی         | `packages/core/src/utils/retry.ts`                                      |
 | لاگ ساختاری                  | `packages/core/src/logger.ts`                                           |
 | تشخیص tenant از hostname     | `apps/web/src/lib/tenant.ts`                                            |
-| سرور وب‌هوک ربات‌ها + worker | `apps/bots/src/index.ts`                                                |
+| سرور وب‌هوک ربات‌ها + worker | `apps/bots/src/index.ts`, `apps/bots/src/router.ts`                     |
+| یک کد برای تلگرام و بله      | `apps/bots/src/platform/bot.ts` (apiRoot), `platform/capabilities.ts`   |
+| فلو رزرو stateless در ربات   | `apps/bots/src/platform/callback.ts`, `apps/bots/src/flows/booking.ts`  |
+| پنل ادمین در ربات            | `apps/bots/src/admin/panel.ts`                                          |
+| ارسال نوتیفیکیشن از outbox   | `apps/bots/src/senders.ts`                                              |
 | قالب‌ها                      | `packages/themes/src/index.ts`                                          |
 | استقرار                      | `deploy/docker-compose.yml`, `deploy/Caddyfile`                         |

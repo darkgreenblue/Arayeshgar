@@ -9,7 +9,8 @@
 - **دکمه شیشه‌ای و callback_query:** پشتیبانی می‌شود؛ `answerCallbackQuery` از خرداد ۱۴۰۴ به کلاینت‌های بله اضافه شده و کلاینت‌های قدیمی ندارند ⇒ طراحی ما به آن وابسته نیست (stateless با callback_data، پاسخ با editMessageText).
 - **وب‌هوک:** پشتیبانی می‌شود؛ گواهی self-signed رد می‌شود ⇒ Caddy با گواهی معتبر. فایل تا ۲۰MB.
 - **grammY:** `new Bot(token, { client: { apiRoot } })` ([grammY docs](https://grammy.dev/ref/core/apiclientoptions)). ⇒ یک کد برای دو پلتفرم.
-- **تأییدنشده / ریسک:** inline mode احتمالاً ندارد (فرض: ندارد)؛ برابری فیلدهای Update تست نشده؛ rate limit روی POST سنگین گزارش شده. **اقدام:** اجرای `scripts/bale-probe.ts` در ابتدای فاز ۴.
+- **تأییدنشده / ریسک:** inline mode احتمالاً ندارد (فرض: ندارد)؛ برابری فیلدهای Update تست نشده؛ rate limit روی POST سنگین گزارش شده.
+- **وضعیت پروب (۱۴۰۵/۰۶/۱۴):** ⏳ هنوز اجرا نشده چون توکن تستی بله در دسترس نیست. کد ربات‌ها طوری نوشته شده که به هیچ قابلیت مشکوکی وابسته نباشد: فلو کاملاً stateless با `callback_data`، شکست `answerCallbackQuery` بی‌صدا نادیده گرفته می‌شود، و اگر `editMessageText` جواب ندهد پیام تازه فرستاده می‌شود. به‌جای پروب واقعی، ۱۵ تست خودکار روی یک Bot API ساختگی اجرا می‌شود (`apps/bots/test/`). **به‌محض دریافت توکن:** `BALE_BOT_TOKEN=… pnpm bale:probe` و ثبت نتیجه در همین بخش و در `apps/bots/src/platform/capabilities.ts`.
 
 ## ۲. هاستینگ و دسترسی
 
