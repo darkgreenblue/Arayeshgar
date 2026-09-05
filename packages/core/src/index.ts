@@ -25,3 +25,7 @@ export * from "./worker/jobs";
 export * from "./storage/disk";
 export * from "./tenant/site";
 export * from "./admin";
+export * from "./onboarding/schema";
+export * from "./onboarding/create";
+export * from "./onboarding/ai-copy";
+export * from "./onboarding/platform";
