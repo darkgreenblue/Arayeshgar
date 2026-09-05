@@ -66,3 +66,41 @@ export async function bookingsForDay(ctx: AdminCtx, dayOffset = 0) {
     .orderBy(asc(bookings.startAt));
   return { day, rows };
 }
+
+export async function bookingDetail(ctx: AdminCtx, id: string) {
+  const rows = await db()
+    .select({ booking: bookings, customer: customers, service: services, staff, payment: payments })
+    .from(bookings)
+    .innerJoin(customers, eq(customers.id, bookings.customerId))
+    .innerJoin(services, eq(services.id, bookings.serviceId))
+    .innerJoin(staff, eq(staff.id, bookings.staffId))
+    .leftJoin(payments, eq(payments.bookingId, bookings.id))
+    .where(and(eq(bookings.id, id), eq(bookings.tenantId, ctx.tenant.id), staffScope(ctx)))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function upcomingCounts(ctx: AdminCtx) {
+  const tz = ctx.tenant.timezone;
+  const today = localDateOf(new Date(), tz);
+  const from = localToInstant(today, 0, tz);
+  const to = localToInstant(addDays(today, 7), 0, tz);
+  const [r] = await db()
+    .select({ n: count() })
+    .from(bookings)
+    .where(
+      and(
+        eq(bookings.tenantId, ctx.tenant.id),
+        gte(bookings.startAt, from),
+        lt(bookings.startAt, to),
+        inArray(bookings.status, [
+          "confirmed",
+          "pending_payment",
+          "receipt_submitted",
+          "pending_approval",
+        ]),
+        staffScope(ctx),
+      ),
+    );
+  return Number(r?.n ?? 0);
+}
