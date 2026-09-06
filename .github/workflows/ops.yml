@@ -12,7 +12,18 @@ on:
       action:
         type: choice
         options:
-          [status, logs, errors, restart, env-check, db-query, admin-list, admin-add, admin-remove]
+          [
+            ssh-check,
+            status,
+            logs,
+            errors,
+            restart,
+            env-check,
+            db-query,
+            admin-list,
+            admin-add,
+            admin-remove,
+          ]
         required: true
       lines:
         description: "تعداد خطوط لاگ"
@@ -28,7 +39,78 @@ jobs:
   ops:
     runs-on: ubuntu-latest
     steps:
+      # تشخیص اتصال، روی خودِ رانر — نه روی سرور، چون وقتی لازم است که اتصال کار نمی‌کند.
+      # مقدار کلید هرگز چاپ نمی‌شود؛ فقط طول، نوع، و اثر انگشتِ عمومی که اطلاعات محرمانه نیست.
+      - name: ssh-check
+        if: inputs.action == 'ssh-check'
+        env:
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          set +e
+          echo "── سکرت ──"
+          if [ -z "$SSH_KEY" ]; then
+            echo "VPS_SSH_KEY: ❌ ست نشده یا خالی است"
+            exit 1
+          fi
+          echo "VPS_SSH_KEY: ✅ ست شده ($(printf '%s' "$SSH_KEY" | wc -c) بایت، $(printf '%s\n' "$SSH_KEY" | wc -l) خط)"
+          case "$SSH_KEY" in
+            "-----BEGIN OPENSSH PRIVATE KEY-----"*) echo "قالب: OpenSSH (ed25519 یا rsa جدید)" ;;
+            "-----BEGIN RSA PRIVATE KEY-----"*)     echo "قالب: PEM RSA (قدیمی)" ;;
+            "-----BEGIN EC PRIVATE KEY-----"*)      echo "قالب: PEM EC" ;;
+            "-----BEGIN "*)                         echo "قالب: PEM ناشناخته" ;;
+            "ssh-"*|"ecdsa-"*)                      echo "قالب: ❌ این کلیدِ عمومی است، نه خصوصی" ;;
+            *) echo "قالب: ❌ با -----BEGIN شروع نمی‌شود — احتمالاً بریده یا اشتباه چسبانده شده" ;;
+          esac
+
+          umask 077
+          printf '%s\n' "$SSH_KEY" > /tmp/k
+          echo
+          echo "── کلید ──"
+          if PUB=$(ssh-keygen -y -P '' -f /tmp/k 2>/tmp/kerr); then
+            echo "پارس شد: ✅"
+            echo "نوع و اثر انگشت (عمومی، محرمانه نیست):"
+            printf '%s\n' "$PUB" > /tmp/k.pub
+            ssh-keygen -l -f /tmp/k.pub
+            echo
+            echo "نصفِ عمومی همین کلید — عمومی است و چاپش خطری ندارد."
+            echo "اگر بخواهید سرور این کلید را بپذیرد، همین خط باید در"
+            echo "~/.ssh/authorized_keys کاربر ubuntu باشد:"
+            echo "-----8<-----"
+            printf '%s\n' "$PUB"
+            echo "----->8-----"
+          else
+            echo "پارس شد: ❌"
+            head -5 /tmp/kerr
+            echo "(اگر گفته passphrase لازم است، یعنی کلید رمز دارد و برای Actions باید نسخه‌ی بدون رمز ساخته شود)"
+          fi
+
+          echo
+          echo "── سرور ──"
+          if ssh-keyscan -T 10 185.204.171.170 2>/dev/null | head -1 | grep -q .; then
+            echo "پورت ۲۲: ✅ باز و پاسخ‌گو"
+          else
+            echo "پورت ۲۲: ❌ از رانرِ گیت‌هاب در دسترس نیست"
+          fi
+
+          echo
+          echo "── اتصال واقعی ──"
+          OUT=$(ssh -i /tmp/k -o BatchMode=yes -o StrictHostKeyChecking=no \
+                    -o UserKnownHostsFile=/dev/null -o ConnectTimeout=15 \
+                    ubuntu@185.204.171.170 'echo CONNECTED; whoami; hostname' 2>&1)
+          RC=$?
+          rm -f /tmp/k /tmp/k.pub /tmp/kerr
+          printf '%s\n' "$OUT" | grep -v 'Warning: Permanently added'
+          if [ $RC -eq 0 ]; then
+            echo "نتیجه: ✅ اتصال برقرار است — بقیه‌ی اکشن‌های Ops هم کار می‌کنند"
+          else
+            echo "نتیجه: ❌ سرور کلید را نپذیرفت"
+            echo "یعنی کلید سالم است ولی در authorized_keys کاربر ubuntu نیست:"
+            echo "همان مقداری که در Secrets ریپوی مونوریپو هست باید عیناً اینجا هم گذاشته شود."
+            exit 1
+          fi
+
       - uses: appleboy/ssh-action@v1
+        if: inputs.action != 'ssh-check'
         env:
           OPS_ACTION: ${{ inputs.action }}
           OPS_LINES: ${{ inputs.lines }}
