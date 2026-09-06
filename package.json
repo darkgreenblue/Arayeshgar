@@ -10,7 +10,7 @@
   },
   "scripts": {
     "bale:probe": "tsx scripts/bale-probe.ts",
-    "build": "pnpm -r --filter ./packages/* --filter ./apps/* build",
+    "build": "pnpm -r --filter './packages/*' --filter './apps/*' build",
     "db:generate": "pnpm --filter @arayeshgar/db generate",
     "db:migrate": "pnpm --filter @arayeshgar/db migrate",
     "db:seed": "pnpm --filter @arayeshgar/db seed",
