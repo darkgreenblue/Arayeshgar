@@ -1,0 +1,186 @@
+name: Ops
+
+# دیباگ سرور بدون SSH. سشن این را با GitHub MCP اجرا می‌کند و خروجی را از لاگ جاب می‌خواند.
+# قواعد امنیتی (بند ۷ PLATFORM.md):
+#  - ورودی کاربر هرگز در shell یا SQL جاسازی نمی‌شود؛ همیشه از راه env می‌آید.
+#  - نام اپ از ورودی گرفته نمی‌شود؛ فقط اپ‌های خودِ این پروژه ری‌استارت می‌شوند.
+#  - db-query فقط‌خواندنی است.
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        type: choice
+        options: [status, logs, errors, restart, env-check, db-query, admin-list, admin-add, admin-remove]
+        required: true
+      lines:
+        description: 'تعداد خطوط لاگ'
+        default: '100'
+      query:
+        description: 'db-query: فقط SELECT'
+        default: ''
+      telegram_id:
+        description: 'admin-add / admin-remove: آی‌دی عددی تلگرام'
+        default: ''
+
+jobs:
+  ops:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: appleboy/ssh-action@v1
+        env:
+          OPS_ACTION: ${{ inputs.action }}
+          OPS_LINES: ${{ inputs.lines }}
+          OPS_QUERY: ${{ inputs.query }}
+          OPS_TGID: ${{ inputs.telegram_id }}
+          PROJ: arayeshgar
+        with:
+          host: 185.204.171.170
+          username: ubuntu
+          key: ${{ secrets.VPS_SSH_KEY }}
+          # قاعده‌ی ۵ بند ۵: هرچه اسکریپت می‌خواند باید اینجا هم باشد وگرنه خالی می‌رسد
+          envs: OPS_ACTION,OPS_LINES,OPS_QUERY,OPS_TGID,PROJ
+          script: |
+            set -e
+            case "$OPS_LINES" in (*[!0-9]*|'') OPS_LINES=100;; esac
+            export DB_PATH="$HOME/$PROJ/data/$PROJ.db"
+            APP_WEB="$PROJ-web"
+            APP_BOTS="$PROJ-bots"
+            DIR="$HOME/$PROJ"
+
+            case "$OPS_ACTION" in
+              status)
+                echo "── محیط ──"
+                echo "node:  $(node -v 2>/dev/null || echo 'نصب نیست')"
+                echo "npm:   $(npm -v 2>/dev/null || echo '-')"
+                echo "pnpm:  $(pnpm -v 2>/dev/null || echo 'نصب نیست')"
+                echo "sqlite3: $(sqlite3 --version 2>/dev/null || echo 'نصب نیست')"
+                echo "cloudflared: $(cloudflared --version 2>/dev/null || echo 'نصب نیست')"
+                echo "python3: $(python3 --version 2>/dev/null || echo '-')"
+                echo
+                echo "── پروژه ──"
+                if [ -d "$DIR" ]; then
+                  echo "پوشه: ✅ $DIR"
+                  ls -la "$DIR" | head -20
+                else
+                  echo "پوشه: ⬜ هنوز ساخته نشده (اولین دیپلوی می‌سازدش)"
+                fi
+                echo
+                echo "── اپ‌های pm2 (کلِ سرور) ──"
+                pm2 ls || echo "pm2 در دسترس نیست"
+                echo
+                systemctl list-unit-files 2>/dev/null | grep -q '^pm2-ubuntu' \
+                  && echo "pm2 startup: ✅ بعد از ری‌بوت بالا می‌آید" \
+                  || echo "pm2 startup: ❌ بعد از ری‌بوت بالا نمی‌آید"
+                echo
+                echo "── تصادم نام و پورت ──"
+                for a in "$APP_WEB" "$APP_BOTS"; do
+                  if pm2 jlist 2>/dev/null | grep -q "\"name\":\"$a\""; then
+                    echo "نام «$a»: قبلاً وجود دارد (مالِ همین پروژه)"
+                  else
+                    echo "نام «$a»: آزاد ✅"
+                  fi
+                done
+                if ss -ltn 2>/dev/null | grep -q ':8800 '; then
+                  echo "پورت 8800: ❌ اشغال است"
+                else
+                  echo "پورت 8800: آزاد ✅"
+                fi
+                echo
+                echo "── دیسک ──"
+                df -h / | tail -1
+                ;;
+
+              logs)
+                for a in "$APP_WEB" "$APP_BOTS"; do
+                  echo "════ $a ════"
+                  tail -n "$OPS_LINES" "$HOME/.pm2/logs/$a-out.log"   2>/dev/null || echo "(خالی)"
+                  tail -n "$OPS_LINES" "$HOME/.pm2/logs/$a-error.log" 2>/dev/null || echo "(خالی)"
+                done
+                ;;
+
+              errors)
+                for a in "$APP_WEB" "$APP_BOTS"; do
+                  echo "════ $a ════"
+                  tail -n "$OPS_LINES" "$HOME/.pm2/logs/$a-error.log" 2>/dev/null || echo "(خالی)"
+                done
+                ;;
+
+              restart)
+                # فقط اپ‌های این پروژه — نام هرگز از ورودی نمی‌آید
+                pm2 restart "$APP_WEB" --update-env 2>/dev/null || echo "$APP_WEB بالا نبود"
+                pm2 restart "$APP_BOTS" --update-env 2>/dev/null || echo "$APP_BOTS بالا نبود"
+                sleep 3
+                pm2 ls
+                ;;
+
+              env-check)
+                # فقط وجودِ فایل — هرگز محتوا
+                [ -f "$DIR/.env" ] && echo ".env ✅ موجود ($(wc -l < "$DIR/.env") خط)" || echo ".env ❌ نیست"
+                [ -f "$DIR/data/$PROJ.db" ] && echo "دیتابیس ✅ ($(du -h "$DIR/data/$PROJ.db" | cut -f1))" || echo "دیتابیس ⬜ هنوز ساخته نشده"
+                [ -d "$DIR/data/uploads" ] && echo "آپلودها ✅ ($(find "$DIR/data/uploads" -type f 2>/dev/null | wc -l) فایل)" || echo "آپلودها ⬜"
+                ;;
+
+              db-query)
+                [ -n "$OPS_QUERY" ] || { echo "❌ query لازم است"; exit 1; }
+                cd "$DIR"
+                # اتصال readonly: نوشتن در سطح SQLite رد می‌شود. کوئری از env می‌آید نه interpolation.
+                node -e '
+                  const D = require("better-sqlite3");
+                  const db = new D(process.env.DB_PATH, { readonly: true, fileMustExist: true });
+                  const rows = db.prepare(process.env.OPS_QUERY).all();
+                  console.log("rows:", rows.length);
+                  for (const r of rows.slice(0, 200)) console.log(JSON.stringify(r));
+                ' 2>&1
+                ;;
+
+              admin-list)
+                cd "$DIR"
+                node -e '
+                  const D = require("better-sqlite3");
+                  const db = new D(process.env.DB_PATH, { readonly: true, fileMustExist: true });
+                  const rows = db.prepare(
+                    "SELECT id, username, display_name, telegram_chat_id, bale_chat_id, is_active FROM users WHERE role = ? AND tenant_id IS NULL"
+                  ).all("platform_admin");
+                  console.log("ادمین‌های پلتفرم:", rows.length);
+                  for (const r of rows) console.log(JSON.stringify(r));
+                ' 2>&1
+                ;;
+
+              admin-add|admin-remove)
+                case "$OPS_TGID" in
+                  ''|*[!0-9]*) echo "❌ آی‌دی تلگرام باید فقط عدد باشد"; exit 1;;
+                esac
+                cd "$DIR"
+                # ورودی از env می‌آید و با prepared statement بایند می‌شود، نه جاسازی در SQL
+                node -e '
+                  const D = require("better-sqlite3");
+                  const db = new D(process.env.DB_PATH, { fileMustExist: true });
+                  db.pragma("busy_timeout = 5000");
+                  const id = Number(process.env.OPS_TGID);
+                  const add = process.env.OPS_ACTION === "admin-add";
+                  const now = Math.floor(Date.now() / 1000);
+                  const found = db.prepare("SELECT id, username FROM users WHERE telegram_chat_id = ?").get(id);
+                  if (add) {
+                    if (found) {
+                      db.prepare("UPDATE users SET role = ?, tenant_id = NULL, is_active = 1 WHERE id = ?").run("platform_admin", found.id);
+                      console.log("✅ به ادمین پلتفرم ارتقا یافت:", found.username);
+                    } else {
+                      const uid = require("crypto").randomUUID();
+                      db.prepare(
+                        "INSERT INTO users (id, tenant_id, role, username, password_hash, display_name, telegram_chat_id, is_active, created_at) VALUES (?, NULL, ?, ?, ?, ?, ?, 1, ?)"
+                      ).run(uid, "platform_admin", "tg" + id, "", "ادمین " + id, id, now);
+                      console.log("✅ ادمین جدید ساخته شد برای آی‌دی", id);
+                      console.log("   (برای ورود به پنل وب باید از پنل رمز بگذارد؛ دسترسی ربات همین حالا فعال است)");
+                    }
+                  } else {
+                    if (!found) { console.log("این آی‌دی ادمین نبود:", id); process.exit(0); }
+                    db.prepare("UPDATE users SET is_active = 0 WHERE id = ?").run(found.id);
+                    console.log("✅ غیرفعال شد:", found.username);
+                  }
+                  db.prepare(
+                    "INSERT INTO audit_log (id, tenant_id, actor_type, actor_id, action, entity, entity_id, data, created_at) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?)"
+                  ).run(require("crypto").randomUUID(), "system", "ops-workflow", process.env.OPS_ACTION, "user", String(id), JSON.stringify({ via: "ops" }), now);
+                ' 2>&1
+                ;;
+            esac
