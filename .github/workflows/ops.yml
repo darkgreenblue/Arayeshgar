@@ -71,6 +71,13 @@ jobs:
             echo "نوع و اثر انگشت (عمومی، محرمانه نیست):"
             printf '%s\n' "$PUB" > /tmp/k.pub
             ssh-keygen -l -f /tmp/k.pub
+            echo
+            echo "نصفِ عمومی همین کلید — عمومی است و چاپش خطری ندارد."
+            echo "اگر بخواهید سرور این کلید را بپذیرد، همین خط باید در"
+            echo "~/.ssh/authorized_keys کاربر ubuntu باشد:"
+            echo "-----8<-----"
+            printf '%s\n' "$PUB"
+            echo "----->8-----"
           else
             echo "پارس شد: ❌"
             head -5 /tmp/kerr
