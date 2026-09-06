@@ -11,17 +11,18 @@ on:
     inputs:
       action:
         type: choice
-        options: [status, logs, errors, restart, env-check, db-query, admin-list, admin-add, admin-remove]
+        options:
+          [status, logs, errors, restart, env-check, db-query, admin-list, admin-add, admin-remove]
         required: true
       lines:
-        description: 'تعداد خطوط لاگ'
-        default: '100'
+        description: "تعداد خطوط لاگ"
+        default: "100"
       query:
-        description: 'db-query: فقط SELECT'
-        default: ''
+        description: "db-query: فقط SELECT"
+        default: ""
       telegram_id:
-        description: 'admin-add / admin-remove: آی‌دی عددی تلگرام'
-        default: ''
+        description: "admin-add / admin-remove: آی‌دی عددی تلگرام"
+        default: ""
 
 jobs:
   ops:
