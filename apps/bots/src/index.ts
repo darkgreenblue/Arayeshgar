@@ -16,8 +16,11 @@ import { getBot } from "./platform/bot";
 import { registerAll } from "./register";
 import { ensureWebhook } from "./platform/webhook";
 import { pollerKey, startPolling, stopAllPolling, stopPollersNotIn } from "./platform/polling";
+import { demoTokenFor, getSharedDemoBot, publishDemoBotUsername } from "./platform/demo";
 
 process.env.SERVICE_NAME = "bots";
+/** Stands in for a tenant id in the poller registry: the demo bots belong to no one tenant. */
+const DEMO_POLLER_ID = "shared-demo";
 const env = getEnv();
 const db = createDb(env.DATABASE_URL);
 
@@ -65,6 +68,25 @@ export async function syncBots(): Promise<{ ok: number; failed: number }> {
       }
     }
   }
+  // The shared demo bots are keyed by platform, not by tenant: one instance answers for
+  // every prospect, so it is started once rather than once per demo tenant.
+  for (const platform of ["telegram", "bale"] as const) {
+    if (!demoTokenFor(platform)) continue;
+    try {
+      const bot = await getSharedDemoBot(db, platform, (b) => registerAll(b, db));
+      if (!bot) continue;
+      await publishDemoBotUsername(db, platform, bot.botInfo.username);
+      if (env.BOT_TRANSPORT === "polling") {
+        await startPolling(DEMO_POLLER_ID, platform, bot, demoTokenFor(platform)!);
+        live.add(pollerKey(DEMO_POLLER_ID, platform));
+      }
+      ok++;
+    } catch (err) {
+      failed++;
+      logger.error({ platform, err: String(err) }, "shared demo bot sync failed");
+    }
+  }
+
   if (env.BOT_TRANSPORT === "polling") await stopPollersNotIn(live);
   if (ok || failed) logger.info({ transport: env.BOT_TRANSPORT, ok, failed }, "bot sync finished");
   return { ok, failed };

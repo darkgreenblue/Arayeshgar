@@ -14,6 +14,7 @@ import {
   type NotificationKind,
 } from "@arayeshgar/core";
 import { getBot } from "./platform/bot";
+import { getSharedDemoBot } from "./platform/demo";
 import { toInlineKeyboard } from "./platform/keyboard";
 import type { Senders } from "@arayeshgar/core";
 import { registerAll } from "./register";
@@ -33,6 +34,18 @@ export function invalidateTenant(tenantId: string) {
   tenantCache.delete(tenantId);
 }
 
+/**
+ * The tenant's own bot when it has a token, otherwise the shared demo bot. A prospect's
+ * notifications have to come out of the same bot they are talking to, or the reply would
+ * arrive from a bot they have never opened — which Telegram would refuse to deliver.
+ */
+async function botFor(db: Db, tenant: Tenant, platform: Platform) {
+  const own = await getBot(tenant, platform, (b) => registerAll(b, db));
+  if (own) return own;
+  if (tenant.status !== "demo") return null;
+  return getSharedDemoBot(db, platform, (b) => registerAll(b, db));
+}
+
 async function send(db: Db, platform: Platform, row: OutboxRow): Promise<void> {
   const tenant = await loadTenant(db, row.tenantId);
   if (!tenant) throw new Error(`tenant ${row.tenantId} not found`);
@@ -42,8 +55,8 @@ async function send(db: Db, platform: Platform, row: OutboxRow): Promise<void> {
     logger.info({ tenantId: tenant.id, platform }, "channel disabled; dropping notification");
     return; // treated as sent: the tenant turned this channel off
   }
-  const bot = await getBot(tenant, platform, (b) => registerAll(b, db));
-  if (!bot) throw new Error(`no ${platform} token for tenant ${tenant.id}`);
+  const bot = await botFor(db, tenant, platform);
+  if (!bot) throw new Error(`no ${platform} bot for tenant ${tenant.id}`);
 
   const payload = row.payload as unknown as BookingPayload;
   const msg = renderNotification(row.kind as NotificationKind, payload);

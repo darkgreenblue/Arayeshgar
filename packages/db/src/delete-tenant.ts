@@ -3,6 +3,7 @@ import type { Db, Tx } from "./client";
 import {
   auditLog,
   bookings,
+  botBindings,
   botSessions,
   customerIdentities,
   customers,
@@ -54,6 +55,7 @@ export async function deleteTenantIn(tx: Tx, tenantId: string): Promise<void> {
   await tx.delete(manualSlots).where(eq(manualSlots.tenantId, tenantId));
   await tx.delete(notificationOutbox).where(eq(notificationOutbox.tenantId, tenantId));
   await tx.delete(botSessions).where(eq(botSessions.tenantId, tenantId));
+  await tx.delete(botBindings).where(eq(botBindings.tenantId, tenantId));
   await tx.delete(auditLog).where(eq(auditLog.tenantId, tenantId));
 
   // staff_services has no tenant_id of its own; it hangs off staff and services.
