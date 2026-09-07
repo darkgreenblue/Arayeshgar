@@ -18,6 +18,7 @@
 ```
 apps/web      Next.js — سایت هر آرایشگر (از روی hostname)، فلو رزرو، پنل ادمین، پنل پلتفرم
 apps/bots     grammY — یک کد برای تلگرام و بله، worker نوتیفیکیشن و انقضا
+              ترنسپورت با `BOT_TRANSPORT` عوض می‌شود؛ پیش‌فرض long polling
 packages/core منطق دامنه: اسلات‌ها، موتور رزرو، پرداخت، نوتیف، فلگ‌ها، مجوزها، آنبوردینگ
 packages/db   اسکیمای Drizzle، migration، seed
 packages/themes سه قالب سایت قابل تعویض
