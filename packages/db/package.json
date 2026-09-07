@@ -22,8 +22,8 @@
     "test": "echo 'no tests in @arayeshgar/db'"
   },
   "dependencies": {
-    "drizzle-orm": "^0.45.0",
-    "postgres": "^3.4.7"
+    "@libsql/client": "^0.18.0",
+    "drizzle-orm": "^0.45.0"
   },
   "devDependencies": {
     "@arayeshgar/config": "workspace:*",

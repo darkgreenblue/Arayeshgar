@@ -68,8 +68,37 @@ export const Errors = {
   validation: (msg: string) => new DomainError("VALIDATION", msg),
 };
 
-/** Postgres exclusion_violation (23P01) or unique_violation (23505), possibly wrapped by drizzle. */
-export function pgErrorCode(err: unknown): string | undefined {
-  const e = err as { code?: string; cause?: { code?: string } } | undefined;
-  return e?.code ?? e?.cause?.code;
+/**
+ * SQLite reports every constraint failure with the same coarse `SQLITE_CONSTRAINT`
+ * code; only the extended code says which constraint. Matching the coarse one would
+ * make a CHECK failure — always a bug — look exactly like a lost slot race and get
+ * silently retried, so the extended code is what we read.
+ *
+ * The chain is walked because drizzle wraps driver errors, and libsql itself puts the
+ * extended name on `cause` while keeping the numeric extended code on `rawCode`.
+ */
+function errorChain(err: unknown): { code?: string; rawCode?: number }[] {
+  const out: { code?: string; rawCode?: number }[] = [];
+  let cur = err as { code?: string; rawCode?: number; cause?: unknown } | undefined;
+  for (let depth = 0; cur && typeof cur === "object" && depth < 5; depth++) {
+    out.push({ code: cur.code, rawCode: cur.rawCode });
+    cur = cur.cause as typeof cur;
+  }
+  return out;
+}
+
+/** SQLITE_CONSTRAINT_UNIQUE (2067) or SQLITE_CONSTRAINT_PRIMARYKEY (1555). */
+export function isUniqueViolation(err: unknown): boolean {
+  return errorChain(err).some(
+    (e) =>
+      e.rawCode === 2067 ||
+      e.rawCode === 1555 ||
+      e.code === "SQLITE_CONSTRAINT_UNIQUE" ||
+      e.code === "SQLITE_CONSTRAINT_PRIMARYKEY",
+  );
+}
+
+/** SQLITE_BUSY: another process held the write lock past busy_timeout. */
+export function isBusy(err: unknown): boolean {
+  return errorChain(err).some((e) => e.code === "SQLITE_BUSY" || e.rawCode === 5);
 }

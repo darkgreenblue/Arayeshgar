@@ -30,7 +30,6 @@ e2e/            تست سرتاسری سناریوی طلایی (Playwright)
 
 ```bash
 cp .env.example .env
-docker compose -f deploy/docker-compose.dev.yml up -d   # فقط Postgres
 pnpm install
 pnpm db:migrate && pnpm db:seed                          # tenant دمو: demo.localhost, admin/admin1234
 pnpm dev                                                 # web: http://demo.localhost:3000 , bots: :3001
@@ -40,5 +39,5 @@ pnpm dev                                                 # web: http://demo.loca
 
 ```bash
 pnpm lint && pnpm format:check && pnpm typecheck && pnpm test
-pnpm test:e2e     # سناریوی طلایی با مرورگر واقعی (نیاز به build و Postgres)
+pnpm test:e2e     # سناریوی طلایی با مرورگر واقعی (نیاز به build)
 ```

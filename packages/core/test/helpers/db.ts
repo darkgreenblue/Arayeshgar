@@ -1,34 +1,63 @@
 /**
- * Integration-test fixtures. Each call creates an isolated tenant (random slug) so tests can run in
- * parallel against one database. Requires DATABASE_URL with migrations applied.
+ * Integration-test fixtures.
+ *
+ * With SQLite there is nothing to stand up: each test file gets its own throwaway
+ * database file in the OS temp directory, migrated at import time. That means
+ * `pnpm test` needs no services at all, and no test can see another file's rows —
+ * which is what previously made an outbox assertion count every fixture's messages.
+ * Set DATABASE_URL to point them all at one database instead.
  */
 import { randomBytes } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import {
   DEFAULT_BOOKING_RULES,
   DEFAULT_DEPOSIT_SETTINGS,
   DEFAULT_FEATURES,
   createDb,
   defaultBranding,
+  deleteTenant,
   schedules,
   services,
   staff,
   staffServices,
   tenants,
   users,
+  runMigrations,
   type Db,
   type Tenant,
 } from "@arayeshgar/db";
 
-export const DATABASE_URL = process.env.DATABASE_URL;
-export const hasDb = Boolean(DATABASE_URL);
-
 process.env.SESSION_SECRET ??= "test-secret-test-secret-test-secret-test";
 process.env.BASE_DOMAIN ??= "localhost";
 
+export const DATABASE_URL =
+  process.env.DATABASE_URL ??
+  path.join(tmpdir(), `arayeshgar-test-${randomBytes(6).toString("hex")}.db`);
+
+if (!process.env.DATABASE_URL) {
+  process.on("exit", () => {
+    for (const suffix of ["", "-wal", "-shm"]) {
+      try {
+        rmSync(DATABASE_URL + suffix);
+      } catch {
+        /* already gone */
+      }
+    }
+  });
+}
+
+// Core reads DATABASE_URL through getEnv(), so the generated path has to be visible
+// there too, not just to the fixtures.
+process.env.DATABASE_URL = DATABASE_URL;
+
+// Top-level await: the schema has to exist before any test body runs.
+await runMigrations(DATABASE_URL);
+
 let shared: Db | undefined;
 export function testDb(): Db {
-  if (!shared) shared = createDb(DATABASE_URL, { max: 8 });
+  if (!shared) shared = createDb(DATABASE_URL);
   return shared;
 }
 
@@ -123,7 +152,7 @@ export async function makeTenant(
     serviceId: svc.id,
     ownerId: owner.id,
     cleanup: async () => {
-      await db.delete(tenants).where(eq(tenants.id, tenant.id)); // cascades
+      await deleteTenant(db, tenant.id);
     },
   };
 }

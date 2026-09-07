@@ -1,20 +1,23 @@
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { drizzle } from "drizzle-orm/postgres-js";
-import { migrate } from "drizzle-orm/postgres-js/migrator";
-import postgres from "postgres";
+import { createClient } from "@libsql/client";
+import { drizzle } from "drizzle-orm/libsql";
+import { migrate } from "drizzle-orm/libsql/migrator";
+import { resolveDbUrl } from "./client";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const MIGRATIONS_FOLDER = path.resolve(here, "../drizzle");
 
 /** Applies all pending SQL migrations in ./drizzle. Safe to run on every deploy. */
-export async function runMigrations(url = process.env.DATABASE_URL) {
-  if (!url) throw new Error("DATABASE_URL is not set");
-  const sql = postgres(url, { max: 1, onnotice: () => {} });
+export async function runMigrations(url?: string) {
+  const client = createClient({ url: resolveDbUrl(url) });
   try {
-    await migrate(drizzle(sql), { migrationsFolder: MIGRATIONS_FOLDER });
+    // WAL is written into the file header, so setting it here makes it permanent
+    // for every process that opens the database afterwards.
+    await client.execute("PRAGMA journal_mode = WAL");
+    await migrate(drizzle(client), { migrationsFolder: MIGRATIONS_FOLDER });
   } finally {
-    await sql.end();
+    client.close();
   }
 }
 

@@ -3,8 +3,8 @@
  * demo → active switch. These are the only cross-tenant queries in the codebase and every one of
  * them is named `platform*` on purpose.
  */
-import { and, count, desc, eq, gte, inArray, sql } from "drizzle-orm";
-import { bookings, tenants, users, type Db, type Tenant } from "@arayeshgar/db";
+import { and, count, desc, eq, gte, inArray, isNull } from "drizzle-orm";
+import { bookings, notificationOutbox, tenants, users, type Db, type Tenant } from "@arayeshgar/db";
 import { Errors } from "../errors/domain";
 import { FEATURE_KEYS, normalizeFeatures, type FeatureKey } from "../features/registry";
 import { hashPassword } from "../auth/password";
@@ -146,9 +146,10 @@ export async function platformStats(db: Db) {
     .select({ n: count() })
     .from(bookings)
     .where(gte(bookings.createdAt, new Date(Date.now() - 30 * 24 * 3_600_000)));
-  const [pendingNotifs] = await db.execute<{ n: number }>(
-    sql`select count(*)::int as n from notification_outbox where sent_at is null`,
-  );
+  const [pendingNotifs] = await db
+    .select({ n: count() })
+    .from(notificationOutbox)
+    .where(isNull(notificationOutbox.sentAt));
   return {
     tenants: Number(t?.n ?? 0),
     activeTenants: Number(active?.n ?? 0),

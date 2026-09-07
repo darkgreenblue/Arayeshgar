@@ -1,10 +1,13 @@
 import { z } from "zod";
+import { DEFAULT_DB_PATH } from "@arayeshgar/db";
 
 const schema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   BASE_DOMAIN: z.string().default("localhost"),
   PUBLIC_URL_SCHEME: z.enum(["http", "https"]).default("http"),
-  DATABASE_URL: z.string().min(1),
+  // A path to the SQLite file. Defaults to what §9ب of PLATFORM.md expects, so a
+  // fresh checkout, a test run and the server all agree without anyone setting it.
+  DATABASE_URL: z.string().min(1).default(DEFAULT_DB_PATH),
   SESSION_SECRET: z.string().min(32, "SESSION_SECRET must be at least 32 characters"),
   UPLOADS_DIR: z.string().default("./data/uploads"),
   LOG_LEVEL: z.string().default("info"),

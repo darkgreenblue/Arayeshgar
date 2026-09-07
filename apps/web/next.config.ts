@@ -6,7 +6,7 @@ const nextConfig: NextConfig = {
   output: process.env.NEXT_NO_STANDALONE ? undefined : "standalone",
   reactStrictMode: true,
   transpilePackages: ["@arayeshgar/core", "@arayeshgar/db"],
-  serverExternalPackages: ["postgres", "pino"],
+  serverExternalPackages: ["@libsql/client", "libsql", "pino"],
   images: { remotePatterns: [] },
 };
 

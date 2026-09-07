@@ -2,7 +2,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { staff, users, type Db } from "@arayeshgar/db";
 import { hashPassword } from "../auth/password";
-import { Errors, pgErrorCode } from "../errors/domain";
+import { Errors, isUniqueViolation } from "../errors/domain";
 
 export const staffInput = z.object({
   id: z.string().uuid().optional(),
@@ -108,8 +108,7 @@ export async function setStaffLogin(
       .returning({ id: users.id });
     return row!.id;
   } catch (err) {
-    if (pgErrorCode(err) === "23505")
-      throw Errors.validation("این نام کاربری قبلاً استفاده شده است.");
+    if (isUniqueViolation(err)) throw Errors.validation("این نام کاربری قبلاً استفاده شده است.");
     throw err;
   }
 }

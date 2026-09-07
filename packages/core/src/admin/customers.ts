@@ -1,4 +1,4 @@
-import { and, count, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, like, or, sql } from "drizzle-orm";
 import { bookings, customers, services, staff, type Db } from "@arayeshgar/db";
 import { Errors } from "../errors/domain";
 import { normalizeIranMobile, toEnglishDigits } from "../utils/phone";
@@ -10,8 +10,10 @@ export async function searchCustomers(db: Db, tenantId: string, q: string, limit
     ? and(
         eq(customers.tenantId, tenantId),
         or(
-          ilike(customers.name, `%${term}%`),
-          ilike(customers.phone, `%${toEnglishDigits(term).replace(/\D/g, "")}%`),
+          // SQLite LIKE is already case-insensitive for ASCII, and Persian has no case,
+          // so plain LIKE matches what ilike did for every name this product sees.
+          like(customers.name, `%${term}%`),
+          like(customers.phone, `%${toEnglishDigits(term).replace(/\D/g, "")}%`),
           phone ? eq(customers.phone, phone) : sql`false`,
         ),
       )

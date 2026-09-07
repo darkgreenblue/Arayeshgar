@@ -2,24 +2,15 @@ name: CI
 # بند ۱۴ PLATFORM.md: فقط روی pull_request. اجرا روی push همان درخت را دوباره تست می‌کند
 # و سهمیه‌ی Actions را دو برابر می‌سوزاند. workflow_dispatch لازم است چون یک بار دیده شده
 # که CI روی هدِ یک PR اصلاً تریگر نشده.
+#
+# هیچ سرویسی لازم نیست: تست‌ها فایل SQLite موقت خودشان را می‌سازند و مهاجرت می‌دهند.
 on:
   pull_request:
   workflow_dispatch:
 jobs:
   check:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: arayeshgar
-          POSTGRES_PASSWORD: arayeshgar
-          POSTGRES_DB: arayeshgar_test
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd "pg_isready -U arayeshgar" --health-interval 5s --health-timeout 5s --health-retries 10
     env:
-      DATABASE_URL: postgres://arayeshgar:arayeshgar@localhost:5432/arayeshgar_test
       SESSION_SECRET: ci-secret-ci-secret-ci-secret-ci-secret
     steps:
       - uses: actions/checkout@v4
@@ -30,25 +21,14 @@ jobs:
       - run: pnpm lint
       - run: pnpm format:check
       - run: pnpm typecheck
-      - run: pnpm db:migrate
       - run: pnpm test
       - run: pnpm build
 
   e2e:
     needs: check
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: arayeshgar
-          POSTGRES_PASSWORD: arayeshgar
-          POSTGRES_DB: arayeshgar_e2e
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd "pg_isready -U arayeshgar" --health-interval 5s --health-timeout 5s --health-retries 10
     env:
-      DATABASE_URL: postgres://arayeshgar:arayeshgar@localhost:5432/arayeshgar_e2e
+      DATABASE_URL: data/e2e.db
       SESSION_SECRET: e2e-secret-e2e-secret-e2e-secret-e2e-secret
       BASE_DOMAIN: localhost
     steps:

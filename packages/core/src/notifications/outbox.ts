@@ -1,6 +1,13 @@
 /**
- * Outbox drain: claim due rows with FOR UPDATE SKIP LOCKED (safe with several worker instances),
- * hand each to the channel sender, mark sent or schedule a retry with exponential backoff.
+ * Outbox drain: claim due rows, hand each to the channel sender, then mark sent or
+ * schedule a retry with exponential backoff.
+ *
+ * Postgres claimed rows with FOR UPDATE SKIP LOCKED so several workers could drain in
+ * parallel. SQLite has no row locks and needs none: only one writer runs at a time, and
+ * the claim below opens with BEGIN IMMEDIATE, so a second worker either waits and then
+ * sees the bumped next_try_at, or is not running at all. The claim is still a single
+ * transaction that both selects and stamps the rows, which is what keeps a crash
+ * mid-send from turning into a tight resend loop.
  */
 import { and, eq, inArray, isNull, lt, lte, sql } from "drizzle-orm";
 import { notificationOutbox, type Db, type OutboxRow, type Platform } from "@arayeshgar/db";
@@ -30,20 +37,19 @@ export async function drainOutbox(
       .where(
         and(
           isNull(notificationOutbox.sentAt),
-          lte(notificationOutbox.nextTryAt, sql`now()`),
+          lte(notificationOutbox.nextTryAt, new Date()),
           lt(notificationOutbox.attempts, MAX_ATTEMPTS),
         ),
       )
       .orderBy(notificationOutbox.nextTryAt)
-      .limit(batch)
-      .for("update", { skipLocked: true });
+      .limit(batch);
     if (rows.length) {
       // Bump attempts and push next_try_at into the future immediately: a crash mid-send cannot cause a tight loop.
       await tx
         .update(notificationOutbox)
         .set({
           attempts: sql`${notificationOutbox.attempts} + 1`,
-          nextTryAt: sql`now() + interval '5 minutes'`,
+          nextTryAt: new Date(Date.now() + 5 * 60_000),
         })
         .where(
           inArray(

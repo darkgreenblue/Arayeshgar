@@ -12,9 +12,9 @@
     "@arayeshgar/config": "workspace:*",
     "@arayeshgar/core": "workspace:*",
     "@arayeshgar/db": "workspace:*",
+    "@libsql/client": "^0.18.0",
     "@playwright/test": "^1.63.0",
     "drizzle-orm": "^0.45.0",
-    "postgres": "^3.4.7",
     "typescript": "~5.9.0"
   }
 }
