@@ -499,6 +499,35 @@ export const botSessions = sqliteTable(
 );
 
 // ---------------------------------------------------------------------------
+// Which barber a chat is currently talking to.
+//
+// A tenant with its own bot token needs none of this: the token identifies the tenant.
+// The shared demo bot is one token serving every prospect at once, so each chat has to
+// be remembered, and remembered separately from bot_sessions — that row is deleted the
+// moment a flow finishes, and losing the binding with it would drop the customer back
+// to "who are you?" right after their first booking.
+//
+// Keyed by (platform, chat) rather than by tenant: the question being answered is
+// "which tenant is this chat's", which cannot be asked of a tenant-scoped table.
+// ---------------------------------------------------------------------------
+export const botBindings = sqliteTable(
+  "bot_bindings",
+  {
+    platform: text("platform", { enum: PLATFORMS }).notNull(),
+    platformUserId: text("platform_user_id").notNull(),
+    tenantId: text("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().default(now()),
+  },
+  (t) => [
+    primaryKey({ columns: [t.platform, t.platformUserId] }),
+    index("bot_bindings_tenant_idx").on(t.tenantId),
+    check("bot_bindings_platform_ck", sql`${t.platform} IN (${inList(PLATFORMS)})`),
+  ],
+);
+
+// ---------------------------------------------------------------------------
 // Relations (for drizzle relational queries)
 // ---------------------------------------------------------------------------
 export const tenantsRelations = relations(tenants, ({ many }) => ({
