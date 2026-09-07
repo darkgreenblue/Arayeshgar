@@ -15,6 +15,9 @@ const schema = z.object({
   BALE_API_ROOT: z.string().url().default("https://tapi.bale.ai"),
   BOTS_PUBLIC_URL: z.string().url().default("http://localhost:3001"),
   BOTS_PORT: z.coerce.number().default(3001),
+  // Polling by default (§11): it needs no public URL, so the demo runs from a laptop.
+  // Switch to webhook once a stable HTTPS address exists.
+  BOT_TRANSPORT: z.enum(["polling", "webhook"]).default("polling"),
   WORKER_INTERVAL_SEC: z.coerce.number().default(30),
   ANTHROPIC_API_KEY: z.string().optional(),
   ANTHROPIC_MODEL: z.string().default("claude-sonnet-5"),

@@ -15,6 +15,7 @@ import { createSenders } from "./senders";
 import { getBot } from "./platform/bot";
 import { registerAll } from "./register";
 import { ensureWebhook } from "./platform/webhook";
+import { pollerKey, startPolling, stopAllPolling, stopPollersNotIn } from "./platform/polling";
 
 process.env.SERVICE_NAME = "bots";
 const env = getEnv();
@@ -32,10 +33,15 @@ app.get("/health", async (c) => {
 });
 app.route("/", createRouter(db));
 
-/** Registers webhooks for every tenant that has tokens; failures are logged, never fatal. */
-export async function syncWebhooks(): Promise<{ ok: number; failed: number }> {
+/**
+ * Brings every tenant's bots online in whichever transport is configured, and takes
+ * offline any poller whose tenant lost its token or was suspended. Failures are logged
+ * per tenant, never fatal: one bad token must not silence everyone else's bots.
+ */
+export async function syncBots(): Promise<{ ok: number; failed: number }> {
   let ok = 0;
   let failed = 0;
+  const live = new Set<string>();
   const list = (await activeTenants(db)) as Tenant[];
   for (const tenant of list) {
     for (const platform of ["telegram", "bale"] as const) {
@@ -46,15 +52,21 @@ export async function syncWebhooks(): Promise<{ ok: number; failed: number }> {
       try {
         const bot = await getBot(tenant, platform, (b) => registerAll(b, db));
         if (!bot) continue;
-        await ensureWebhook(bot, tenant, platform);
+        if (env.BOT_TRANSPORT === "polling") {
+          await startPolling(tenant.id, platform, bot, token);
+          live.add(pollerKey(tenant.id, platform));
+        } else {
+          await ensureWebhook(bot, tenant, platform);
+        }
         ok++;
       } catch (err) {
         failed++;
-        logger.error({ tenantId: tenant.id, platform, err: String(err) }, "webhook sync failed");
+        logger.error({ tenantId: tenant.id, platform, err: String(err) }, "bot sync failed");
       }
     }
   }
-  if (ok || failed) logger.info({ ok, failed }, "webhook sync finished");
+  if (env.BOT_TRANSPORT === "polling") await stopPollersNotIn(live);
+  if (ok || failed) logger.info({ transport: env.BOT_TRANSPORT, ok, failed }, "bot sync finished");
   return { ok, failed };
 }
 
@@ -65,14 +77,15 @@ serve({ fetch: app.fetch, port: env.BOTS_PORT }, (info) => {
 const stopWorker = startWorker(db, createSenders(db), env.WORKER_INTERVAL_SEC);
 logger.info({ intervalSec: env.WORKER_INTERVAL_SEC }, "worker started");
 
-void syncWebhooks();
-const webhookTimer = setInterval(() => void syncWebhooks(), 10 * 60_000);
+void syncBots();
+const botSyncTimer = setInterval(() => void syncBots(), 10 * 60_000);
 
 const shutdown = (signal: string) => {
   logger.info({ signal }, "shutting down");
   stopWorker();
-  clearInterval(webhookTimer);
-  process.exit(0);
+  clearInterval(botSyncTimer);
+  // Let pollers finish their in-flight getUpdates so no update is handled twice.
+  void stopAllPolling().finally(() => process.exit(0));
 };
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));

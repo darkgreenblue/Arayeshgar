@@ -11,6 +11,13 @@ export class MockApi {
   readonly calls: Call[] = [];
   private server?: Server;
   private fileBytes = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(256)]); // tiny JPEG
+  /** Updates waiting to be handed to a polling bot via getUpdates. */
+  private pending: unknown[] = [];
+
+  /** Queues an update for the next getUpdates, so polling can be driven from a test. */
+  deliver(update: unknown): void {
+    this.pending.push(update);
+  }
 
   async start(): Promise<string> {
     this.server = createServer(async (req, res) => {
@@ -43,6 +50,17 @@ export class MockApi {
         body._multipart = true;
       }
       this.calls.push({ method, body });
+      // Long polling: hold briefly for an update rather than answering [] instantly,
+      // which would spin grammY's loop as fast as the event loop allows.
+      if (method === "getUpdates") {
+        for (let waited = 0; this.pending.length === 0 && waited < 200; waited += 10) {
+          await new Promise((r) => setTimeout(r, 10));
+        }
+        const batch = this.pending.splice(0, this.pending.length);
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: true, result: batch }));
+        return;
+      }
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ ok: true, result: this.resultFor(method) }));
     });
