@@ -16,10 +16,12 @@ import { DomainError } from "../src/errors/domain";
 import { drainOutbox } from "../src/notifications/outbox";
 import { expireBookings } from "../src/worker/jobs";
 import { localDateOf } from "../src/utils/jalali";
-import { hasDb, makeTenant, testDb, tomorrowAt, type Fixture } from "./helpers/db";
+import { execFile } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { DATABASE_URL, makeTenant, testDb, tomorrowAt, type Fixture } from "./helpers/db";
 
-describe.skipIf(!hasDb)("booking engine (Postgres)", () => {
-  const db = hasDb ? testDb() : (null as never);
+describe("booking engine (SQLite)", () => {
+  const db = testDb();
   const fixtures: Fixture[] = [];
   const fx = async (opts?: Parameters<typeof makeTenant>[1]) => {
     const f = await makeTenant(db, opts);
@@ -108,6 +110,74 @@ describe.skipIf(!hasDb)("booking engine (Postgres)", () => {
       .select()
       .from(bookings)
       .where(and(eq(bookings.tenantId, f.tenant.id), eq(bookings.startAt, start)));
+    expect(rows).toHaveLength(1);
+  });
+
+  it("a second process cannot double-book the same slot", async () => {
+    // The queue in write-queue.ts only orders writes inside one process. Production
+    // runs two (arayeshgar-web and arayeshgar-bots), so this drives the real engine
+    // from a real child process against the same file, racing the parent.
+    //
+    // The two starts overlap without matching: 16:00-16:30 against 16:15-16:45 for a
+    // 30-minute service. bookings_staff_start_uq cannot see that — only BEGIN IMMEDIATE
+    // and the overlap check it protects can. So this exercises the half of the
+    // guarantee that has no backstop.
+    const f = await fx();
+    const start = tomorrowAt(16);
+    const overlapping = new Date(start.getTime() + 15 * 60_000);
+    const worker = fileURLToPath(new URL("./helpers/booking-worker.ts", import.meta.url));
+
+    type Outcome = { ok: boolean; code?: string | null };
+    const child = new Promise<Outcome>((resolve, reject) => {
+      execFile(
+        process.execPath,
+        [
+          "--import",
+          "tsx",
+          worker,
+          DATABASE_URL,
+          f.tenant.id,
+          f.staffId,
+          f.serviceId,
+          overlapping.toISOString(),
+          "09121110000",
+        ],
+        { timeout: 60_000 },
+        (err, stdout) => {
+          if (err && !stdout) return reject(err);
+          const line = stdout.trim().split("\n").pop() ?? "{}";
+          resolve(JSON.parse(line) as Outcome);
+        },
+      );
+    });
+
+    const parent = createBooking(db, {
+      tenant: f.tenant,
+      staffId: f.staffId,
+      serviceId: f.serviceId,
+      startAt: start,
+      customer: { name: "مشتری پروسه اول", phone: "09121110001" },
+      source: "web",
+    })
+      .then((): Outcome => ({ ok: true }))
+      .catch((e: unknown): Outcome => ({
+        ok: false,
+        code: e instanceof DomainError ? e.code : String(e),
+      }));
+
+    const [a, b] = await Promise.all([parent, child]);
+    const winners = [a, b].filter((r) => r.ok);
+    const losers = [a, b].filter((r) => !r.ok);
+
+    // Exactly one booking exists, whichever process got there first.
+    expect(winners).toHaveLength(1);
+    expect(losers).toHaveLength(1);
+    expect(["SLOT_TAKEN", "SLOT_UNAVAILABLE"]).toContain(losers[0]!.code);
+
+    const rows = await db
+      .select()
+      .from(bookings)
+      .where(and(eq(bookings.tenantId, f.tenant.id), eq(bookings.staffId, f.staffId)));
     expect(rows).toHaveLength(1);
   });
 

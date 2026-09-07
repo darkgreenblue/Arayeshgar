@@ -1,6 +1,8 @@
 /**
- * Drives the real webhook router and grammY handlers against a mock Bot API and a real Postgres.
- * This is the closest we can get to the live bots before real tokens arrive.
+ * Drives the real webhook router and grammY handlers against a mock Bot API and a real
+ * database. This is the closest we can get to the live bots before real tokens arrive.
+ *
+ * The database is a throwaway SQLite file migrated here, so the suite needs no services.
  */
 import { randomBytes } from "node:crypto";
 import { mkdtemp } from "node:fs/promises";
@@ -20,12 +22,14 @@ process.env.BOTS_PUBLIC_URL = "https://bots.test.local";
 process.env.UPLOADS_DIR = await mkdtemp(path.join(os.tmpdir(), "bot-uploads-"));
 
 const { upd } = await import("./mock-api");
-const hasDb = Boolean(process.env.DATABASE_URL);
 
-const db = hasDb
-  ? (await import("@arayeshgar/db")).createDb(process.env.DATABASE_URL, { max: 5 })
-  : (null as never);
 const schema = await import("@arayeshgar/db");
+const dbUrl =
+  process.env.DATABASE_URL ??
+  path.join(os.tmpdir(), `arayeshgar-bots-${randomBytes(6).toString("hex")}.db`);
+process.env.DATABASE_URL = dbUrl;
+await schema.runMigrations(dbUrl);
+const db = schema.createDb(dbUrl);
 const core = await import("@arayeshgar/core");
 const { createRouter } = await import("../src/router");
 const { createSenders } = await import("../src/senders");
@@ -88,8 +92,8 @@ async function makeTenant(opts: { deposit?: boolean; mode?: "solo" | "salon_cent
   return { tenant: tenant!, staffId: st!.id, serviceId: svc!.id, ownerId: owner!.id };
 }
 
-describe.skipIf(!hasDb)("bot flows against a mock Bot API", () => {
-  const router = hasDb ? createRouter(db) : (null as never);
+describe("bot flows against a mock Bot API", () => {
+  const router = createRouter(db);
   const created: string[] = [];
   const hook = async (
     t: { id: string; webhookSecret: string },
@@ -104,7 +108,7 @@ describe.skipIf(!hasDb)("bot flows against a mock Bot API", () => {
 
   beforeAll(() => {});
   afterAll(async () => {
-    for (const id of created) await db.delete(schema.tenants).where(eq(schema.tenants.id, id));
+    for (const id of created) await schema.deleteTenant(db, id);
     await api.stop();
   });
 

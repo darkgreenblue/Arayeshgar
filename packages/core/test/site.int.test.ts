@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, it } from "vitest";
 import { loadSiteContent } from "../src/tenant/site";
 import { sniffImage, createDiskStorage } from "../src/storage/disk";
-import { hasDb, makeTenant, testDb, type Fixture } from "./helpers/db";
+import { makeTenant, testDb, type Fixture } from "./helpers/db";
 import { mkdtemp } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -31,8 +31,8 @@ describe("storage", () => {
   });
 });
 
-describe.skipIf(!hasDb)("site content (Postgres)", () => {
-  const db = hasDb ? testDb() : (null as never);
+describe("site content (SQLite)", () => {
+  const db = testDb();
   const fixtures: Fixture[] = [];
   afterAll(async () => {
     for (const f of fixtures) await f.cleanup();

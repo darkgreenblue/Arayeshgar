@@ -2,7 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 
 /**
  * The golden path runs against a real build on a real browser. The web server is started by
- * Playwright; Postgres must already be migrated (CI does this before the e2e job).
+ * Playwright; the SQLite file must already be migrated (CI does this before the e2e job).
  */
 const PORT = Number(process.env.E2E_PORT ?? 3100);
 
@@ -29,8 +29,7 @@ export default defineConfig({
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
     env: {
-      DATABASE_URL:
-        process.env.DATABASE_URL ?? "postgres://arayeshgar:arayeshgar@127.0.0.1:5432/arayeshgar",
+      DATABASE_URL: process.env.DATABASE_URL ?? "data/e2e.db",
       SESSION_SECRET: process.env.SESSION_SECRET ?? "e2e-secret-e2e-secret-e2e-secret-e2e-secret",
       BASE_DOMAIN: "localhost",
       UPLOADS_DIR: process.env.UPLOADS_DIR ?? "./data/e2e-uploads",

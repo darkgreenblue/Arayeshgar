@@ -23,7 +23,7 @@ const db = createDb(env.DATABASE_URL);
 const app = new Hono();
 app.get("/health", async (c) => {
   try {
-    await db.execute(sql`select 1`);
+    await db.get(sql`select 1`);
     return c.json({ ok: true, service: "bots", db: "up" });
   } catch (err) {
     logger.error({ err: String(err) }, "health check: db down");

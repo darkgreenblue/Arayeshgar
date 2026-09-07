@@ -18,7 +18,7 @@ import {
   type Tenant,
   type TenantBranding,
 } from "@arayeshgar/db";
-import { Errors, pgErrorCode } from "../errors/domain";
+import { Errors, isUniqueViolation } from "../errors/domain";
 import { logger } from "../logger";
 import { hashPassword } from "../auth/password";
 import { onboardingSchema, normalizePhoneOrUndefined, type OnboardingInput } from "./schema";
@@ -144,7 +144,7 @@ export async function createTenant(db: Db, input: OnboardingInput): Promise<Crea
     logger.info({ tenantId: result.tenant.id, slug: d.slug, mode: d.mode }, "tenant created");
     return { tenant: result.tenant, adminUsername: d.adminUsername, staffIds: result.staffIds };
   } catch (err) {
-    if (pgErrorCode(err) === "23505")
+    if (isUniqueViolation(err))
       throw Errors.validation("این آدرس (slug) قبلاً استفاده شده است. یکی دیگر انتخاب کنید.");
     throw err;
   }

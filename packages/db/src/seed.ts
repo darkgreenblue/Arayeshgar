@@ -23,8 +23,8 @@ function hashPassword(plain: string): string {
   return `scrypt$${salt}$${hash}`;
 }
 
-export async function seed(url = process.env.DATABASE_URL) {
-  const db = createDb(url, { max: 1 });
+export async function seed(url?: string) {
+  const db = createDb(url);
   const existing = await db.query.tenants.findFirst({ where: eq(tenants.slug, "demo") });
   if (existing) {
     console.error("[seed] demo tenant already exists, skipping");

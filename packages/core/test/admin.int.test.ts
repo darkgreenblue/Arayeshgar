@@ -23,10 +23,10 @@ import {
 } from "../src/admin/settings";
 import { hashPassword, verifyPassword } from "../src/auth/password";
 import { localDateOf, isoDate, addDays } from "../src/utils/jalali";
-import { hasDb, makeTenant, testDb, tomorrowAt, type Fixture } from "./helpers/db";
+import { makeTenant, testDb, tomorrowAt, type Fixture } from "./helpers/db";
 
-describe.skipIf(!hasDb)("admin modules (Postgres)", () => {
-  const db = hasDb ? testDb() : (null as never);
+describe("admin modules (SQLite)", () => {
+  const db = testDb();
   const fixtures: Fixture[] = [];
   const fx = async (opts?: Parameters<typeof makeTenant>[1]) => {
     const f = await makeTenant(db, opts);

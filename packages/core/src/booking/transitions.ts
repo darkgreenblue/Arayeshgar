@@ -15,7 +15,7 @@ import {
   tenants,
 } from "@arayeshgar/db";
 import { isSlotBookable, resolveServiceForStaff } from "../availability/availability";
-import { Errors, pgErrorCode } from "../errors/domain";
+import { Errors, isUniqueViolation } from "../errors/domain";
 import { getEnv, tenantPublicUrl } from "../env";
 import { isEnabled } from "../features/registry";
 import { logger } from "../logger";
@@ -384,7 +384,7 @@ export async function rescheduleBooking(
         .where(eq(bookings.id, bookingId));
     });
   } catch (err) {
-    if (pgErrorCode(err) === "23P01") throw Errors.slotTaken();
+    if (isUniqueViolation(err)) throw Errors.slotTaken();
     throw err;
   }
   const after = await ctxOrThrow(db, tenantId, bookingId);

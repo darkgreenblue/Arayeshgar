@@ -3,8 +3,9 @@
  *
  * 1. validate + upsert customer, apply anti-abuse rules
  * 2. resolve service for staff (duration/price snapshot), compute deposit
- * 3. re-check the slot, insert inside a transaction; the DB EXCLUDE constraint is the final arbiter
- * 4. for "any" staff: try candidates in order, moving on when the constraint fires
+ * 3. re-check the slot and insert inside one BEGIN IMMEDIATE transaction, so the check is
+ *    authoritative: no other process can take the slot between it and the insert
+ * 4. for "any" staff: try candidates in order, moving on when one is lost to a race
  * 5. create payment row when a deposit is due, enqueue notifications
  */
 import { and, count, eq, gte, inArray, lt } from "drizzle-orm";
@@ -16,7 +17,7 @@ import {
   resolveServiceForStaff,
 } from "../availability/availability";
 import { findOrCreateCustomer, linkIdentity } from "../customers/customers";
-import { Errors, pgErrorCode } from "../errors/domain";
+import { DomainError, Errors, isUniqueViolation } from "../errors/domain";
 import { logger } from "../logger";
 import { adminRecipients, customerRecipient, enqueue } from "../notifications/enqueue";
 import { computeDeposit } from "../payments/deposit";
@@ -113,6 +114,14 @@ export async function createBooking(
 
     try {
       const result = await db.transaction(async (tx) => {
+        // The transaction opened with BEGIN IMMEDIATE, so this process now holds the
+        // single write lock. That makes this check authoritative in a way the one above
+        // is not: nobody can slip a booking in between here and the insert below. This
+        // is what replaces the Postgres EXCLUDE constraint, and unlike that constraint
+        // it also covers manual slots and schedule overrides.
+        if (!(await isSlotBookable(tx, tenant, staffId, svc.durationMin, input.startAt, now))) {
+          throw Errors.slotTaken();
+        }
         const code = await uniqueCode(tx, tenant.id);
         const [b] = await tx
           .insert(bookings)
@@ -162,8 +171,11 @@ export async function createBooking(
         payTo: result.payTo,
       };
     } catch (err) {
-      if (pgErrorCode(err) === "23P01") {
-        // exclusion_violation: someone took it between our check and our insert
+      const lostRace =
+        (err instanceof DomainError && err.code === "SLOT_TAKEN") || isUniqueViolation(err);
+      if (lostRace) {
+        // Either the in-transaction re-check saw the slot gone, or bookings_staff_start_uq
+        // rejected an exact-start duplicate. Same meaning: this candidate is no longer free.
         lastErr = Errors.slotTaken();
         log.info(
           { staffId, startAt: input.startAt.toISOString() },

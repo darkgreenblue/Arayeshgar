@@ -3,22 +3,22 @@
  * code the wizard and CLI use.
  */
 import { eq } from "drizzle-orm";
-import { createDb, tenants } from "@arayeshgar/db";
+import { createDb, deleteTenant, tenants } from "@arayeshgar/db";
 import { createTenant, DEFAULT_HOURS } from "@arayeshgar/core";
 
 export const SLUG = "demo-e2e";
 export const ADMIN = { username: "e2eadmin", password: "supersecret" };
 
+/** Same file the web server under test opens, so the run exercises one real database. */
+export const E2E_DB_PATH = process.env.DATABASE_URL ?? "data/e2e.db";
+
 export function db() {
-  return createDb(
-    process.env.DATABASE_URL ?? "postgres://arayeshgar:arayeshgar@127.0.0.1:5432/arayeshgar",
-    { max: 2 },
-  );
+  return createDb(E2E_DB_PATH);
 }
 
 export async function resetTenant() {
   const d = db();
-  await d.delete(tenants).where(eq(tenants.slug, SLUG));
+  await dropBySlug(d);
   const { tenant } = await createTenant(d, {
     slug: SLUG,
     displayName: "آرایشگاه تست سرتاسری",
@@ -48,8 +48,14 @@ export async function resetTenant() {
 }
 
 export async function dropTenant() {
-  await db().delete(tenants).where(eq(tenants.slug, SLUG));
+  await dropBySlug(db());
 }
 
 /** A 1x1 JPEG used as the receipt upload. */
 export const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(512)]);
+
+/** Tenants are removed explicitly, not by cascade — see deleteTenant in @arayeshgar/db. */
+async function dropBySlug(d: ReturnType<typeof db>) {
+  const existing = await d.select({ id: tenants.id }).from(tenants).where(eq(tenants.slug, SLUG));
+  for (const row of existing) await deleteTenant(d, row.id);
+}

@@ -19,7 +19,7 @@ import {
 } from "../src/onboarding/platform";
 import { availableDays } from "../src/availability/availability";
 import { verifyPassword } from "../src/auth/password";
-import { hasDb, testDb } from "./helpers/db";
+import { testDb } from "./helpers/db";
 
 describe("onboarding validation & copy (no DB)", () => {
   const base = {
@@ -79,8 +79,8 @@ describe("onboarding validation & copy (no DB)", () => {
   });
 });
 
-describe.skipIf(!hasDb)("tenant creation (Postgres)", () => {
-  const db = hasDb ? testDb() : (null as never);
+describe("tenant creation (SQLite)", () => {
+  const db = testDb();
   const created: string[] = [];
   afterAll(async () => {
     for (const id of created) await db.delete(tenants).where(eq(tenants.id, id));

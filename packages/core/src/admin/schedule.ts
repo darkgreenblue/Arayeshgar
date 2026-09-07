@@ -1,7 +1,7 @@
 import { and, asc, eq, gte } from "drizzle-orm";
 import { z } from "zod";
 import { manualSlots, scheduleOverrides, schedules, type Db } from "@arayeshgar/db";
-import { Errors, pgErrorCode } from "../errors/domain";
+import { Errors, isUniqueViolation } from "../errors/domain";
 
 const minutes = z.number().int().min(0).max(1440);
 export const weeklyInput = z.array(
@@ -116,7 +116,7 @@ export async function addManualSlot(
       .returning();
     return row!;
   } catch (err) {
-    if (pgErrorCode(err) === "23P01")
+    if (isUniqueViolation(err))
       throw Errors.validation("این بازه با یک اسلات دیگر هم‌پوشانی دارد.");
     throw err;
   }
