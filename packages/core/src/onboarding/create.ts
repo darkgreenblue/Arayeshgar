@@ -19,6 +19,7 @@ import {
   type TenantBranding,
 } from "@arayeshgar/db";
 import { Errors, isUniqueViolation } from "../errors/domain";
+import { track } from "../analytics/events";
 import { logger } from "../logger";
 import { hashPassword } from "../auth/password";
 import { onboardingSchema, normalizePhoneOrUndefined, type OnboardingInput } from "./schema";
@@ -142,6 +143,18 @@ export async function createTenant(db: Db, input: OnboardingInput): Promise<Crea
     });
 
     logger.info({ tenantId: result.tenant.id, slug: d.slug, mode: d.mode }, "tenant created");
+    // The barber is the one who onboards here, so `onboard_done` is about them, not
+    // about their customers. No chat id exists yet, hence no user_id.
+    await track(db, {
+      event: "tenant_created",
+      tenantId: result.tenant.id,
+      props: { slug: d.slug, mode: d.mode, theme: d.theme ?? null },
+    });
+    await track(db, {
+      event: "onboard_done",
+      tenantId: result.tenant.id,
+      props: { slug: d.slug, staff: d.staff.length, services: d.services.length },
+    });
     return { tenant: result.tenant, adminUsername: d.adminUsername, staffIds: result.staffIds };
   } catch (err) {
     if (isUniqueViolation(err))

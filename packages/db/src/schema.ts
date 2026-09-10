@@ -528,6 +528,40 @@ export const botBindings = sqliteTable(
 );
 
 // ---------------------------------------------------------------------------
+// Analytics events — §9ب of PLATFORM.md, contract version 3.
+//
+// This shape is FIXED. It is identical across every product on the shared server so
+// one dashboard can read them all, and §9ب's immutability rule applies: an existing
+// event name or prop is never renamed or removed, only added to. `analytics.int.test.ts`
+// asserts the emitted DDL still matches the contract, because a silent divergence here
+// breaks historical analysis rather than failing loudly.
+//
+// `user_id` is an INTEGER because the contract assumes a Telegram-first funnel. This
+// product is not one: a customer is identified by phone and may never touch a bot. So
+// the value is the chat id when the event came from a bot, and a stable negative number
+// derived from the customer id when it came from the website — negative so the two can
+// never collide, stable so a web customer's events still group together.
+//
+// Everything tenant-scoped lives in `props`, since the contract has no tenant column.
+// ---------------------------------------------------------------------------
+export const events = sqliteTable(
+  "events",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id"),
+    event: text("event").notNull(),
+    props: text("props", { mode: "json" }).$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: integer("created_at", { mode: "timestamp" }).notNull().default(now()),
+  },
+  (t) => [
+    index("idx_events_user").on(t.userId, t.createdAt),
+    index("idx_events_event").on(t.event, t.createdAt),
+  ],
+);
+
+export type AnalyticsEvent = typeof events.$inferSelect;
+
+// ---------------------------------------------------------------------------
 // Relations (for drizzle relational queries)
 // ---------------------------------------------------------------------------
 export const tenantsRelations = relations(tenants, ({ many }) => ({

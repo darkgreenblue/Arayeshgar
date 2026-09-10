@@ -16,6 +16,7 @@ import {
 } from "@arayeshgar/db";
 import { isSlotBookable, resolveServiceForStaff } from "../availability/availability";
 import { Errors, isUniqueViolation } from "../errors/domain";
+import { syntheticUserId, track } from "../analytics/events";
 import { getEnv, tenantPublicUrl } from "../env";
 import { isEnabled } from "../features/registry";
 import { logger } from "../logger";
@@ -175,6 +176,11 @@ export async function submitReceipt(
   await transition(db, tenantId, bookingId, "pending_payment", "receipt_submitted", {
     expiresAt: null,
   });
+  await track(db, {
+    event: "receipt_submitted",
+    tenantId,
+    props: { booking_id: bookingId },
+  });
   await db
     .update(payments)
     .set({
@@ -244,6 +250,12 @@ export async function approveReceipt(
     .where(and(eq(payments.bookingId, bookingId), eq(payments.status, "submitted")));
   const ctx = await ctxOrThrow(db, tenantId, bookingId);
   await audit(db, tenantId, { type: "user", id: userId }, "receipt_approved", bookingId);
+  await track(db, {
+    event: "payment_approved",
+    userId: syntheticUserId(ctx.booking.customerId),
+    tenantId,
+    props: { booking_id: bookingId, amount: ctx.booking.depositAmount },
+  });
   await notify(db, ctx, "booking_confirmed", "customer");
   return ctx;
 }
@@ -328,6 +340,13 @@ export async function markCompleted(
 ): Promise<Booking> {
   const b = await transition(db, tenantId, bookingId, "confirmed", "completed");
   await audit(db, tenantId, { type: "user", id: userId }, "completed", bookingId);
+  // The shared vocabulary's word for "the thing the customer came for happened".
+  await track(db, {
+    event: "product_delivered",
+    userId: syntheticUserId(b.customerId),
+    tenantId,
+    props: { booking_id: bookingId },
+  });
   return b;
 }
 
@@ -339,6 +358,12 @@ export async function markNoShow(
 ): Promise<Booking> {
   const b = await transition(db, tenantId, bookingId, "confirmed", "no_show");
   await audit(db, tenantId, { type: "user", id: userId }, "no_show", bookingId);
+  await track(db, {
+    event: "no_show",
+    userId: syntheticUserId(b.customerId),
+    tenantId,
+    props: { booking_id: bookingId },
+  });
   return b;
 }
 
