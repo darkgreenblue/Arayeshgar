@@ -24,12 +24,20 @@ export default async function PlatformHome() {
     <main className="mx-auto max-w-4xl px-4 py-6">
       <div className="mb-5 flex items-center justify-between">
         <h1 className="text-xl font-black">پنل پلتفرم</h1>
-        <Link
-          href="/platform/new"
-          className="rounded-xl bg-black px-4 py-2 text-sm font-bold text-white"
-        >
-          + مشتری جدید
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/platform/admins"
+            className="rounded-xl border border-black/15 px-4 py-2 text-sm font-bold"
+          >
+            ادمین‌ها
+          </Link>
+          <Link
+            href="/platform/new"
+            className="rounded-xl bg-black px-4 py-2 text-sm font-bold text-white"
+          >
+            + مشتری جدید
+          </Link>
+        </div>
       </div>
       <div className="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
         <Stat label="کل مشتری‌ها" value={stats.tenants} />

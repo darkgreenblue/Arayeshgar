@@ -4,8 +4,10 @@
  */
 import { z } from "zod";
 import {
+  addPlatformAdminByTelegramId,
   createTenant,
   generateCopy,
+  invitePlatformAdmin,
   logger,
   onboardingSchema,
   platformResetOwnerPassword,
@@ -13,12 +15,14 @@ import {
   platformSetCustomDomain,
   platformSetFeatures,
   platformSetStatus,
+  setPlatformAdminActive,
   slugAvailable,
   suggestSlug,
   tenantPublicUrl,
   getEnv,
   Errors,
 } from "@arayeshgar/core";
+import type { User } from "@arayeshgar/db";
 import { db } from "@/lib/db";
 import { jsonError } from "@/lib/http";
 import { requirePlatformApi } from "@/lib/platform";
@@ -27,7 +31,10 @@ export const dynamic = "force-dynamic";
 
 const uuid = z.string().uuid();
 
-const handlers: Record<string, (payload: unknown) => Promise<unknown>> = {
+/** Every handler gets the acting admin, because roster changes are recorded under their name. */
+type Handler = (payload: unknown, actor: User) => Promise<unknown>;
+
+const handlers: Record<string, Handler> = {
   "tenant.create": async (p) => {
     const parsed = onboardingSchema.safeParse(p);
     if (!parsed.success) {
@@ -100,6 +107,32 @@ const handlers: Record<string, (payload: unknown) => Promise<unknown>> = {
       .parse(p);
     return generateCopy(input);
   },
+  "admin.add": async (p, actor) => {
+    const { telegramId, displayName } = z
+      .object({
+        // A Telegram id is a positive integer and nothing else. Rejected here as well as
+        // in core so a typo comes back as a field error, not a domain error.
+        telegramId: z.coerce.number().int().positive(),
+        displayName: z.string().max(80).optional(),
+      })
+      .parse(p);
+    const { user, created } = await addPlatformAdminByTelegramId(db(), {
+      telegramId,
+      displayName,
+      actorId: actor.id,
+    });
+    return { id: user.id, created };
+  },
+  "admin.invite": async (p, actor) => {
+    const { displayName } = z.object({ displayName: z.string().max(80).optional() }).parse(p);
+    const invite = await invitePlatformAdmin(db(), { invitedBy: actor.id, displayName });
+    return { code: invite.code, expiresAt: invite.expiresAt.toISOString(), userId: invite.userId };
+  },
+  "admin.setActive": async (p, actor) => {
+    const { id, isActive } = z.object({ id: uuid, isActive: z.boolean() }).parse(p);
+    const user = await setPlatformAdminActive(db(), { userId: id, isActive, actorId: actor.id });
+    return { id: user.id, isActive: user.isActive };
+  },
 };
 
 export async function POST(req: Request) {
@@ -112,7 +145,7 @@ export async function POST(req: Request) {
     action = body.action;
     const h = handlers[action];
     if (!h) throw Errors.validation(`اکشن ناشناخته: ${action}`);
-    const result = await h(body.payload ?? {});
+    const result = await h(body.payload ?? {}, user);
     logger.info({ userId: user.id, action }, "platform action");
     return Response.json({ ok: true, result });
   } catch (err) {
