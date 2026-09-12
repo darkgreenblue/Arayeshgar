@@ -16,13 +16,24 @@
  *
  * The port is 8800 because 8787 is the shared dashboard's.
  *
- * **The memory limits come from the real box, not from a round number.** `Ops → status`
- * measured it: 961 MB total, 346 MB available, eight other apps using 412 MB, and 375 MB of
- * swap already in use. The first version of this file said 500M + 400M, which on a box that
- * size is not a limit at all — it would never fire before the kernel's OOM killer did, and
- * the process the kernel picks might be somebody else's product. These numbers are a safety
- * valve instead: pm2 restarts our app while there is still room, so the failure stays ours.
- * Re-measure with `Ops → status` before raising either one.
+ * **The memory limits come from measurement, not from round numbers.** Two measurements,
+ * and both mattered:
+ *
+ *  - The box (`Ops → status`): 961 MB total, 346 MB available, 412 MB already held by eight
+ *    other apps, 375 MB of swap already in use.
+ *  - These two processes, run out of the staged deploy tree: web 131 MB RSS, bots 108-125 MB,
+ *    about 253 MB for the pair after serving a few pages.
+ *
+ * The first version of this file guessed 500M and 400M, which on this box is not a limit at
+ * all — it would never fire before the kernel's OOM killer, and the process the kernel picks
+ * need not be ours. The second guess, 160M for bots, was *below* the bots process's own idle
+ * RSS, which would have produced a restart loop. Hence: measure, then set.
+ *
+ * `--max-old-space-size` was tried and dropped: capping the V8 heap moved the pair from
+ * 255 MB to 253 MB, because almost none of the RSS is heap — it is Node's own baseline plus
+ * the 9.7 MB native libsql binding. Complexity for 2 MB is not worth it.
+ *
+ * Re-measure with `Ops → status` before raising either limit.
  */
 module.exports = {
   apps: [
@@ -35,9 +46,9 @@ module.exports = {
       // behind the first while doubling the memory.
       instances: 1,
       exec_mode: "fork",
-      // Next standalone idles near 100 MB; 220M leaves headroom for an SSR spike
-      // without reaching into the 346 MB the whole box has spare.
-      max_memory_restart: "220M",
+      // Measured 131 MB idle and after page loads. 240M catches a leak while leaving
+      // room for an SSR spike.
+      max_memory_restart: "240M",
       autorestart: true,
     },
     {
@@ -49,8 +60,9 @@ module.exports = {
       // messages would be answered by a process the customer is not talking to.
       instances: 1,
       exec_mode: "fork",
-      // grammY + libsql + the worker idle well under 100 MB.
-      max_memory_restart: "160M",
+      // Measured 108-125 MB idle — so 160M, which an earlier version of this file used,
+      // sat below the floor and would have restart-looped.
+      max_memory_restart: "200M",
       autorestart: true,
       // The worker drains the outbox every 30s, so a crash loop would hammer Telegram.
       restart_delay: 5000,

@@ -27,29 +27,47 @@ const pkg = JSON.parse(readFileSync(new URL("package.json", import.meta.url), "u
 /** Only what cannot be bundled: the native SQLite binding and its client. */
 const EXTERNAL = ["@libsql/client", "libsql"];
 
-const result = await build({
-  entryPoints: ["src/index.ts"],
-  outfile: "dist/index.js",
-  bundle: true,
-  platform: "node",
-  // The server's Node version is unknown until `Ops → status` runs. node20 is the floor
-  // Next.js 16 already requires, so it cannot be lower than this.
-  target: "node20",
-  format: "esm",
-  sourcemap: true,
-  minify: false, // a readable stack trace is worth more than the bytes on one server
-  external: EXTERNAL,
-  // ESM output plus a CJS dependency means `require` is not defined; this gives it one.
-  banner: {
-    js: [
-      "import { createRequire as __createRequire } from 'node:module';",
-      "const require = __createRequire(import.meta.url);",
-    ].join("\n"),
-  },
-  logLevel: "info",
-  metafile: true,
-});
+/**
+ * The migrate CLI ships alongside the service. The server has no pnpm and no tsx, so
+ * `pnpm db:migrate` cannot run there — the deploy needs a plain `node bots/migrate.js`.
+ */
+const ENTRIES = {
+  "dist/index.js": "src/index.ts",
+  "dist/migrate.js": "../../packages/db/src/migrate-cli.ts",
+};
 
-const bytes = Object.values(result.metafile.outputs).reduce((n, o) => n + o.bytes, 0);
-console.error(`bundled ${pkg.name} → dist/index.js (${(bytes / 1024).toFixed(0)} KB)`);
+const results = [];
+for (const [outfile, entry] of Object.entries(ENTRIES)) {
+  results.push(
+    await build({
+      entryPoints: [entry],
+      outfile,
+      bundle: true,
+      platform: "node",
+      // The server's Node version is unknown until `Ops → status` runs. node20 is the floor
+      // Next.js 16 already requires, so it cannot be lower than this.
+      target: "node20",
+      format: "esm",
+      sourcemap: true,
+      minify: false, // a readable stack trace is worth more than the bytes on one server
+      external: EXTERNAL,
+      // ESM output plus a CJS dependency means `require` is not defined; this gives it one.
+      banner: {
+        js: [
+          "import { createRequire as __createRequire } from 'node:module';",
+          "const require = __createRequire(import.meta.url);",
+        ].join("\n"),
+      },
+      logLevel: "info",
+      metafile: true,
+    }),
+  );
+}
+
+for (const r of results) {
+  for (const [file, o] of Object.entries(r.metafile.outputs)) {
+    if (file.endsWith(".map")) continue;
+    console.error(`bundled ${pkg.name} → ${file} (${(o.bytes / 1024).toFixed(0)} KB)`);
+  }
+}
 console.error(`external (must be shipped as real files): ${EXTERNAL.join(", ")}`);
