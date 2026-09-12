@@ -90,14 +90,21 @@ export async function consumeBotLinkCode(
   chatId: number,
 ) {
   const trimmed = code.trim();
+  // `is_active` is part of the match, not a check afterwards: deactivating a row is how
+  // the panel revokes an invite, and a revoked code has to stop working there and then.
   let u = await db.query.users.findFirst({
-    where: and(eq(users.tenantId, tenantId), eq(users.botLinkCode, trimmed)),
+    where: and(
+      eq(users.tenantId, tenantId),
+      eq(users.botLinkCode, trimmed),
+      eq(users.isActive, true),
+    ),
   });
   u ??= await db.query.users.findFirst({
     where: and(
       isNull(users.tenantId),
       eq(users.role, "platform_admin"),
       eq(users.botLinkCode, trimmed),
+      eq(users.isActive, true),
     ),
   });
   if (!u || !u.botLinkCodeExpiresAt || u.botLinkCodeExpiresAt < new Date()) return null;
