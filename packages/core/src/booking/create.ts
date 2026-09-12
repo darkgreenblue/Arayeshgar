@@ -18,6 +18,7 @@ import {
 } from "../availability/availability";
 import { findOrCreateCustomer, linkIdentity } from "../customers/customers";
 import { DomainError, Errors, isUniqueViolation } from "../errors/domain";
+import { syntheticUserId, track } from "../analytics/events";
 import { logger } from "../logger";
 import { adminRecipients, customerRecipient, enqueue } from "../notifications/enqueue";
 import { computeDeposit } from "../payments/deposit";
@@ -160,6 +161,32 @@ export async function createBooking(
       });
 
       log.info({ bookingId: result.b.id, code: result.b.code, staffId, status }, "booking created");
+      // `first_value` is the shared vocabulary's "the user got what they came for the
+      // first time"; every later booking is only the product-specific event.
+      const [{ n: bookingCount } = { n: 0 }] = await db
+        .select({ n: count() })
+        .from(bookings)
+        .where(and(eq(bookings.tenantId, tenant.id), eq(bookings.customerId, customer.id)));
+      const analyticsUser = syntheticUserId(customer.id);
+      if (Number(bookingCount) <= 1) {
+        await track(db, {
+          event: "first_value",
+          userId: analyticsUser,
+          tenantId: tenant.id,
+          props: { booking_id: result.b.id, source: input.source },
+        });
+      }
+      await track(db, {
+        event: "booking_created",
+        userId: analyticsUser,
+        tenantId: tenant.id,
+        props: {
+          booking_id: result.b.id,
+          source: input.source,
+          status,
+          deposit_amount: depositAmount,
+        },
+      });
       await notifyCreated(db, tenant, result.b.id);
       return {
         bookingId: result.b.id,
