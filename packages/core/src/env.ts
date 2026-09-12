@@ -18,6 +18,10 @@ const schema = z.object({
   // Polling by default (§11): it needs no public URL, so the demo runs from a laptop.
   // Switch to webhook once a stable HTTPS address exists.
   BOT_TRANSPORT: z.enum(["polling", "webhook"]).default("polling"),
+  // Numeric Telegram ids restored as platform admins on every boot. This is the only
+  // place the environment touches access, and only to grant it back — see
+  // ensurePlatformAdmins. Deploy fills it from OWNER_TELEGRAM_ID.
+  ADMIN_IDS: z.string().default(""),
   // One bot per platform shared by every tenant still in `demo`, so showing a new
   // prospect their own bot needs no BotFather step. Sold customers get their own token,
   // stored per tenant in the database. Deploy fills these from ARAYESHGAR_DEMO_*.

@@ -7,6 +7,7 @@ export * from "./features/registry";
 export * from "./auth/password";
 export * from "./errors/domain";
 export * from "./analytics/events";
+export * from "./admin/platform-admins";
 export * from "./tenant/config";
 export * from "./payments/deposit";
 export * from "./availability/slots";

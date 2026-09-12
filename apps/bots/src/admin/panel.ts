@@ -25,7 +25,9 @@ import {
   confirmBooking,
   consumeBotLinkCode,
   DomainError,
+  findPlatformAdminByChat,
   formatInstantFa,
+  invitePlatformAdmin,
   formatIranMobile,
   formatToman,
   loadBookingContext,
@@ -57,6 +59,38 @@ export function registerAdminPanel(bot: Bot<BotCtx>, db: Db) {
     );
     await ctx.reply(
       `✅ متصل شد، ${u.displayName} عزیز.\nاز این پس رزروها و رسیدهای جدید همین‌جا برایتان می‌آید.\n\n/admin — پنل مدیریت`,
+    );
+  });
+
+  /**
+   * Invites another platform admin — a salesperson, in practice.
+   *
+   * Deliberately does NOT ask for the invitee's numeric Telegram id. Getting that out of
+   * a non-technical person is the step that makes `Ops → admin-add` awkward; a code they
+   * paste into any of our bots skips it entirely.
+   */
+  bot.command("invite", async (ctx) => {
+    const chatId = ctx.chat?.id;
+    if (chatId == null) return;
+    const me = await findPlatformAdminByChat(db, ctx.platform, chatId);
+    // Only a platform admin may create one. A tenant's own owner must not be able to
+    // mint an account that can see every barber on the server.
+    if (!me) return void (await ctx.reply("این دستور فقط برای ادمین‌های پلتفرم است."));
+
+    const name = (ctx.match ?? "").trim();
+    const invite = await invitePlatformAdmin(db, { invitedBy: me.id, displayName: name });
+    logger.info({ invitedBy: me.id, userId: invite.userId }, "platform admin invite issued");
+    await ctx.reply(
+      [
+        `کد دعوت ${name ? `«${name}»` : ""} ساخته شد:`,
+        "",
+        `<code>${invite.code}</code>`,
+        "",
+        `این پیام را برایش بفرستید. او باید در ربات بنویسد:\n<code>/link ${invite.code}</code>`,
+        "",
+        "کد یک ساعت اعتبار دارد و فقط یک بار کار می‌کند.",
+      ].join("\n"),
+      { parse_mode: "HTML" },
     );
   });
 
@@ -97,6 +131,17 @@ const adminKeyboard = () =>
     .row()
     .text("بستن", encode({ a: "adm", v: "close" }));
 
+/**
+ * Who is speaking, as far as admin rights go.
+ *
+ * The tenant's own admins come first. The fallback is what lets the owner and the
+ * salespeople work in any barber's chat: their `tenant_id` is NULL, so the query above
+ * can never match them — `tenant_id = ?` is false for NULL — and without this they were
+ * strangers to every bot despite being platform admins in the database.
+ *
+ * Nothing downstream needs to know the difference: `can()` already grants platform_admin
+ * everything and `visibleStaffIds` already returns "all staff" for them.
+ */
 async function adminUser(db: Db, ctx: BotCtx): Promise<User | null> {
   const chatId = ctx.chat?.id;
   if (chatId == null) return null;
@@ -104,7 +149,7 @@ async function adminUser(db: Db, ctx: BotCtx): Promise<User | null> {
   const u = await db.query.users.findFirst({
     where: and(eq(users.tenantId, ctx.tenant.id), eq(col, chatId), eq(users.isActive, true)),
   });
-  return u ?? null;
+  return u ?? (await findPlatformAdminByChat(db, ctx.platform, chatId));
 }
 
 function staffFilter(admin: User, ctx: BotCtx) {
