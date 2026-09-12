@@ -6,9 +6,20 @@ import { migrate } from "drizzle-orm/libsql/migrator";
 import { resolveDbUrl } from "./client";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-export const MIGRATIONS_FOLDER = path.resolve(here, "../drizzle");
 
-/** Applies all pending SQL migrations in ./drizzle. Safe to run on every deploy. */
+/**
+ * Where the `.sql` files live. Beside this package in a checkout; but a bundled or otherwise
+ * relocated build has no `packages/db` next to it, so `MIGRATIONS_DIR` lets the deploy point
+ * at wherever it actually shipped them.
+ */
+export const MIGRATIONS_FOLDER = process.env.MIGRATIONS_DIR ?? path.resolve(here, "../drizzle");
+
+/**
+ * Applies all pending SQL migrations. Safe to run on every deploy.
+ *
+ * Nothing calls this on its own — importing this module has no side effects. `db:migrate`
+ * goes through `migrate-cli.ts`; see the note there for why that split matters.
+ */
 export async function runMigrations(url?: string) {
   const client = createClient({ url: resolveDbUrl(url) });
   try {
@@ -19,17 +30,4 @@ export async function runMigrations(url?: string) {
   } finally {
     client.close();
   }
-}
-
-const isMain = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
-if (isMain) {
-  runMigrations()
-    .then(() => {
-      console.error("[db] migrations applied");
-      process.exit(0);
-    })
-    .catch((err) => {
-      console.error("[db] migration failed", err);
-      process.exit(1);
-    });
 }

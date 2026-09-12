@@ -1,5 +1,5 @@
 /**
- * Seeds a demo tenant ("demo") so the stack is usable immediately after `docker compose up`.
+ * Seeds a demo tenant ("demo") so a fresh checkout is usable immediately after `pnpm db:migrate`.
  * Idempotent: re-running updates nothing if the tenant exists.
  *
  * Admin login for the demo tenant: username "admin", password "admin1234" (change in prod).

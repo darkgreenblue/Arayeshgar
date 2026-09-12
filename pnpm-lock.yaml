@@ -56,6 +56,9 @@ importers:
       '@hono/node-server':
         specifier: ^1.14.0
         version: 1.19.17(hono@4.13.7)
+      '@libsql/client':
+        specifier: ^0.18.0
+        version: 0.18.0
       drizzle-orm:
         specifier: ^0.45.0
         version: 0.45.2(@libsql/client@0.18.0)(postgres@3.4.9)
@@ -72,6 +75,9 @@ importers:
       '@arayeshgar/config':
         specifier: workspace:*
         version: link:../../packages/config
+      esbuild:
+        specifier: ^0.28.2
+        version: 0.28.2
       typescript:
         specifier: ~5.9.0
         version: 5.9.3

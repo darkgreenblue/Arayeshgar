@@ -9,7 +9,7 @@
 ## معماری (ساده، یک سرور، یک دیتابیس)
 
 ```
- [مشتری]──HTTPS──▶ Caddy (TLS خودکار، *.base-domain + دامنه اختصاصی)
+ [مشتری]──HTTPS──▶ تونل کلادفلر ──▶ 127.0.0.1:8800 (هیچ پورتی روی اینترنت باز نیست)
                       │
           ┌───────────┴───────────────┐
           ▼                           ▼
@@ -39,7 +39,7 @@ packages/core/       domain: booking engine, availability, payments, notificatio
 packages/db/         Drizzle schema, migrations, seed, tenant-scoped repositories
 packages/themes/     ۳ قالب سایت (classic / modern / minimal) با content schema یکسان
 packages/config/     tsconfig, eslint, prettier مشترک
-deploy/              docker-compose.yml, Caddyfile, backup.sh, deploy.sh
+ecosystem.config.cjs لیست پروسه‌های pm2 (نام‌ها پیشوند arayeshgar- دارند)
 scripts/             tenant-create (CLI), bale-probe, set-webhooks
 docs/                ARCHITECTURE.md, STATE.md, SKILLS.md, RESEARCH.md, ONBOARDING.md, RUNBOOK.md
 ```
@@ -119,7 +119,7 @@ confirmed ──▶ completed | cancelled (توسط مشتری تا X ساعت �
 لیست مشتری‌ها + وضعیت (demo/active)، ویزارد «مشتری جدید»، تغییر فلگ‌ها، قالب و رنگ، تنظیم دامنه اختصاصی، مشاهده لاگ نوتیف‌ها و خطاها.
 
 **ویزارد آنبوردینگ (نیمه‌اتوماتیک، ۵ دقیقه):** ۱) برند: نام، slug، حالت (solo/سالن)، هندل اینستاگرام، تلفن، آدرس، لینک نقشه، لوگو، ۳ تا ۶ عکس ← ۲) خدمات و قیمت‌ها و مدت (چند پیش‌فرض آماده) ← ۳) ساعت کاری ← ۴) بیعانه: شماره کارت، مبلغ، مهلت ← ۵) توکن ربات تلگرام و بله (راهنمای BotFather/بله داخل صفحه) ← ۶) قالب و رنگ + پیش‌نمایش زنده ← ۷) (ماژول AI) تولید بیو/توضیح خدمات/متای SEO با خروجی JSON سخت‌گیرانه، قابل ویرایش ← «ایجاد» ⇒ tenant ساخته می‌شود، وب‌هوک‌ها ست می‌شوند، سایت روی `slug.base-domain` بالاست. همین کار با `pnpm tenant:create --file tenant.json` هم ممکن است.  
-تبدیل دمو به نهایی = تغییر status + (اختیاری) وارد کردن دامنه اختصاصی (Caddy on-demand TLS).
+تبدیل دمو به نهایی = تغییر status + (اختیاری) وارد کردن دامنه اختصاصی (Cloudflare for SaaS: مشتری یک CNAME می‌زند، DNS دامنه‌اش جابجا نمی‌شود).
 
 ### سایت (کارت ویزیت + CTA رزرو)
 
@@ -139,7 +139,7 @@ confirmed ──▶ completed | cancelled (توسط مشتری تا X ساعت �
 ### جزئیات فنی که بازبینی مشخص کرد
 
 - **تشخیص tenant از hostname** در یک تابع `resolveTenant(host)` با تقدم صریح: `platform.<base>` ⇒ پنل پلتفرم؛ `<slug>.<base>` یا `<slug>.localhost` ⇒ tenant؛ در غیر این صورت جستجو در `custom_domain`.
-- **Caddy:** wildcard برای `*.<base>`؛ برای دامنه اختصاصی on-demand TLS با endpoint `ask` (`/api/caddy/ask?domain=`) که فقط دامنه‌های ثبت‌شده در `tenants.custom_domain` را تأیید می‌کند؛ در توسعه `tls internal`.
+- **دسترسی از بیرون:** یک تونل نام‌دار کلادفلر با ingress وایلدکارد `*.‹دامنه›` به `127.0.0.1:8800`. TLS کار کلادفلر است، پس هیچ پورتی باز نمی‌شود و هیچ گواهی‌ای روی سرور مدیریت نمی‌شود. دامنه‌ی اختصاصی مشتری از Cloudflare for SaaS می‌آید. (endpoint `/api/caddy/ask` از دوره‌ی Caddy باقی مانده و دیگر استفاده نمی‌شود — پیشنهاد حذف، منتظر تأیید مالک.)
 - **ربات‌های چند‌مستاجری:** نمونه grammY هر tenant به‌صورت lazy ساخته و کش می‌شود (`bot.init()`)؛ بررسی secret از URL (هدر secret مخصوص تلگرام است). یک «نقشه قابلیت» برای بله (مثلاً `supportsAnswerCallbackQuery`) که با اسکریپت `bale-probe` پر می‌شود.
 - **تحویل عکس رسید به ادمین:** فایل با stream از storage خوانده و به‌صورت multipart با `sendPhoto` ارسال می‌شود (بدون نیاز به URL عمومی). storage: `uploads/{tenantId}/{yyyy}/{mm}/{uuid}.jpg` پشت `packages/core/storage` (آداپتر disk؛ S3 بعداً).
 - **worker:** به‌جای cron، یک حلقه `setInterval` هر ۳۰ ثانیه: `expireBookings()`, `drainOutbox()`, `enqueueReminders()`؛ ایدمپوتنت و قابل اجرا در چند نمونه.
@@ -176,4 +176,4 @@ confirmed ──▶ completed | cancelled (توسط مشتری تا X ساعت �
 | پنل ادمین در ربات            | `apps/bots/src/admin/panel.ts`                                          |
 | ارسال نوتیفیکیشن از outbox   | `apps/bots/src/senders.ts`                                              |
 | قالب‌ها                      | `packages/themes/src/index.ts`                                          |
-| استقرار                      | `deploy/docker-compose.yml`, `deploy/Caddyfile`                         |
+| استقرار                      | `ecosystem.config.cjs`, `apps/bots/build.mjs`, `docs/DEPLOY.md`         |

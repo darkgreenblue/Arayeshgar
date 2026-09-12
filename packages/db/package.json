@@ -17,7 +17,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "generate": "drizzle-kit generate",
-    "migrate": "tsx src/migrate.ts",
+    "migrate": "tsx src/migrate-cli.ts",
     "seed": "tsx src/seed.ts",
     "test": "echo 'no tests in @arayeshgar/db'"
   },
