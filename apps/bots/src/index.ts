@@ -7,7 +7,7 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { sql } from "drizzle-orm";
-import { getEnv, logger, startWorker } from "@arayeshgar/core";
+import { ensurePlatformAdmins, getEnv, logger, parseAdminIds, startWorker } from "@arayeshgar/core";
 import { createDb, type Tenant } from "@arayeshgar/db";
 import { activeTenants } from "@arayeshgar/core";
 import { createRouter } from "./router";
@@ -98,6 +98,10 @@ serve({ fetch: app.fetch, port: env.BOTS_PORT }, (info) => {
 
 const stopWorker = startWorker(db, createSenders(db), env.WORKER_INTERVAL_SEC);
 logger.info({ intervalSec: env.WORKER_INTERVAL_SEC }, "worker started");
+
+// Before anything else: restore the platform admins named in ADMIN_IDS. This is the
+// guarantee that a wrong `Ops → admin-remove` costs a restart rather than the account.
+void ensurePlatformAdmins(db, parseAdminIds(env.ADMIN_IDS));
 
 void syncBots();
 const botSyncTimer = setInterval(() => void syncBots(), 10 * 60_000);

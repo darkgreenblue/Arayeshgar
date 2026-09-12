@@ -1,5 +1,5 @@
 import { randomInt } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { tenants, users, type Db, type Tenant } from "@arayeshgar/db";
 import { hashPassword, verifyPassword } from "../auth/password";
@@ -74,7 +74,14 @@ export async function issueBotLinkCode(
   return { code, expiresAt };
 }
 
-/** Called by the bots when a chat sends /link <code>. Returns the linked user or null. */
+/**
+ * Called by the bots when a chat sends /link <code>. Returns the linked user or null.
+ *
+ * A tenant's own admin is matched first, exactly as before. The second lookup exists
+ * because a platform admin has `tenant_id = NULL`, and `tenant_id = ?` is never true for
+ * NULL in SQL — so before this, an invited salesperson's code could never be found and
+ * `/link` was structurally unable to connect them.
+ */
 export async function consumeBotLinkCode(
   db: Db,
   tenantId: string,
@@ -82,8 +89,16 @@ export async function consumeBotLinkCode(
   platform: "telegram" | "bale",
   chatId: number,
 ) {
-  const u = await db.query.users.findFirst({
-    where: and(eq(users.tenantId, tenantId), eq(users.botLinkCode, code.trim())),
+  const trimmed = code.trim();
+  let u = await db.query.users.findFirst({
+    where: and(eq(users.tenantId, tenantId), eq(users.botLinkCode, trimmed)),
+  });
+  u ??= await db.query.users.findFirst({
+    where: and(
+      isNull(users.tenantId),
+      eq(users.role, "platform_admin"),
+      eq(users.botLinkCode, trimmed),
+    ),
   });
   if (!u || !u.botLinkCodeExpiresAt || u.botLinkCodeExpiresAt < new Date()) return null;
   await db
