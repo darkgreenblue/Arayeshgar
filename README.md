@@ -21,7 +21,6 @@ apps/bots       یک پروسه، N ربات (تلگرام + بله با یک ک
 packages/core   منطق دامنه مشترک: اسلات‌ها، موتور رزرو، پرداخت، نوتیف، فلگ‌ها، مجوزها
 packages/db     اسکیمای Drizzle، migration ها، seed
 packages/themes سه قالب سایت قابل تعویض
-deploy/         docker-compose، Caddyfile، بک‌آپ
 scripts/        bale-probe، tenant-create
 e2e/            تست سرتاسری سناریوی طلایی (Playwright)
 ```
