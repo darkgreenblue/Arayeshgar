@@ -172,6 +172,27 @@ jobs:
                 echo
                 echo "── دیسک ──"
                 df -h / | tail -1
+                echo
+                # این سرور ۱ گیگ رم دارد و چند محصول دیگر رویش زنده‌اند، پس عدد حافظه
+                # همان‌قدر مهم است که دیسک: سقف max_memory_restart ما باید قبل از اینکه
+                # کرنل مجبور شود اپ کسی دیگر را بکشد فعال شود.
+                echo "── حافظه ──"
+                free -m | sed -n '1,3p'
+                echo
+                echo "مجموع حافظه‌ی اپ‌های pm2:"
+                pm2 jlist 2>/dev/null | python3 -c '
+            import json, sys
+            try:
+                apps = json.load(sys.stdin)
+            except Exception:
+                print("  (pm2 jlist خوانده نشد)"); raise SystemExit(0)
+            total = 0
+            for a in apps:
+                mem = (a.get("monit") or {}).get("memory") or 0
+                total += mem
+                print("  %-18s %6.1f MB" % (a.get("name", "?"), mem / 1048576))
+            print("  %-18s %6.1f MB" % ("— جمع", total / 1048576))
+            '
                 ;;
 
               logs)
@@ -207,27 +228,38 @@ jobs:
               db-query)
                 [ -n "$OPS_QUERY" ] || { echo "❌ query لازم است"; exit 1; }
                 cd "$DIR"
-                # اتصال readonly: نوشتن در سطح SQLite رد می‌شود. کوئری از env می‌آید نه interpolation.
-                node -e '
-                  const D = require("better-sqlite3");
-                  const db = new D(process.env.DB_PATH, { readonly: true, fileMustExist: true });
-                  const rows = db.prepare(process.env.OPS_QUERY).all();
-                  console.log("rows:", rows.length);
-                  for (const r of rows.slice(0, 200)) console.log(JSON.stringify(r));
-                ' 2>&1
+                # python3 و ماژول sqlite3ِ استانداردش روی سرور هست؛ better-sqlite3 نیست و
+                # هرگز نصب نمی‌شود (ما libsql را می‌فرستیم) — این اکشن قبلاً همین‌جا می‌شکست.
+                # mode=ro نوشتن را در سطح خود SQLite رد می‌کند، و کوئری از env می‌آید نه
+                # جاسازی در SQL یا shell.
+                python3 - <<'PY' 2>&1
+            import json, os, sqlite3
+            con = sqlite3.connect("file:%s?mode=ro" % os.environ["DB_PATH"], uri=True, timeout=5)
+            con.row_factory = sqlite3.Row
+            try:
+                rows = con.execute(os.environ["OPS_QUERY"]).fetchall()
+            except sqlite3.Error as e:
+                print("❌ خطای SQL:", e); raise SystemExit(1)
+            print("rows:", len(rows))
+            for r in rows[:200]:
+                print(json.dumps({k: r[k] for k in r.keys()}, ensure_ascii=False, default=str))
+            PY
                 ;;
 
               admin-list)
                 cd "$DIR"
-                node -e '
-                  const D = require("better-sqlite3");
-                  const db = new D(process.env.DB_PATH, { readonly: true, fileMustExist: true });
-                  const rows = db.prepare(
-                    "SELECT id, username, display_name, telegram_chat_id, bale_chat_id, is_active FROM users WHERE role = ? AND tenant_id IS NULL"
-                  ).all("platform_admin");
-                  console.log("ادمین‌های پلتفرم:", rows.length);
-                  for (const r of rows) console.log(JSON.stringify(r));
-                ' 2>&1
+                python3 - <<'PY' 2>&1
+            import json, os, sqlite3
+            con = sqlite3.connect("file:%s?mode=ro" % os.environ["DB_PATH"], uri=True, timeout=5)
+            con.row_factory = sqlite3.Row
+            rows = con.execute(
+                "SELECT id, username, display_name, telegram_chat_id, bale_chat_id, is_active "
+                "FROM users WHERE role = ? AND tenant_id IS NULL", ("platform_admin",)
+            ).fetchall()
+            print("ادمین‌های پلتفرم:", len(rows))
+            for r in rows:
+                print(json.dumps({k: r[k] for k in r.keys()}, ensure_ascii=False, default=str))
+            PY
                 ;;
 
               admin-add|admin-remove)
@@ -235,35 +267,45 @@ jobs:
                   ''|*[!0-9]*) echo "❌ آی‌دی تلگرام باید فقط عدد باشد"; exit 1;;
                 esac
                 cd "$DIR"
-                # ورودی از env می‌آید و با prepared statement بایند می‌شود، نه جاسازی در SQL
-                node -e '
-                  const D = require("better-sqlite3");
-                  const db = new D(process.env.DB_PATH, { fileMustExist: true });
-                  db.pragma("busy_timeout = 5000");
-                  const id = Number(process.env.OPS_TGID);
-                  const add = process.env.OPS_ACTION === "admin-add";
-                  const now = Math.floor(Date.now() / 1000);
-                  const found = db.prepare("SELECT id, username FROM users WHERE telegram_chat_id = ?").get(id);
-                  if (add) {
-                    if (found) {
-                      db.prepare("UPDATE users SET role = ?, tenant_id = NULL, is_active = 1 WHERE id = ?").run("platform_admin", found.id);
-                      console.log("✅ به ادمین پلتفرم ارتقا یافت:", found.username);
-                    } else {
-                      const uid = require("crypto").randomUUID();
-                      db.prepare(
-                        "INSERT INTO users (id, tenant_id, role, username, password_hash, display_name, telegram_chat_id, is_active, created_at) VALUES (?, NULL, ?, ?, ?, ?, ?, 1, ?)"
-                      ).run(uid, "platform_admin", "tg" + id, "", "ادمین " + id, id, now);
-                      console.log("✅ ادمین جدید ساخته شد برای آی‌دی", id);
-                      console.log("   (برای ورود به پنل وب باید از پنل رمز بگذارد؛ دسترسی ربات همین حالا فعال است)");
-                    }
-                  } else {
-                    if (!found) { console.log("این آی‌دی ادمین نبود:", id); process.exit(0); }
-                    db.prepare("UPDATE users SET is_active = 0 WHERE id = ?").run(found.id);
-                    console.log("✅ غیرفعال شد:", found.username);
-                  }
-                  db.prepare(
-                    "INSERT INTO audit_log (id, tenant_id, actor_type, actor_id, action, entity, entity_id, data, created_at) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?)"
-                  ).run(require("crypto").randomUUID(), "system", "ops-workflow", process.env.OPS_ACTION, "user", String(id), JSON.stringify({ via: "ops" }), now);
-                ' 2>&1
+                # ورودی از env می‌آید و بایند می‌شود، نه جاسازی در SQL.
+                # اپ زنده هم ممکن است هم‌زمان بنویسد، پس busy_timeout لازم است.
+                python3 - <<'PY' 2>&1
+            import os, sqlite3, time, uuid
+            con = sqlite3.connect(os.environ["DB_PATH"], timeout=5, isolation_level=None)
+            con.execute("PRAGMA busy_timeout = 5000")
+            tg = int(os.environ["OPS_TGID"])
+            add = os.environ["OPS_ACTION"] == "admin-add"
+            now = int(time.time())
+            con.execute("BEGIN IMMEDIATE")
+            row = con.execute("SELECT id, username FROM users WHERE telegram_chat_id = ?", (tg,)).fetchone()
+            if add:
+                if row:
+                    con.execute("UPDATE users SET role = ?, tenant_id = NULL, is_active = 1 WHERE id = ?",
+                                ("platform_admin", row[0]))
+                    print("✅ به ادمین پلتفرم ارتقا یافت:", row[1])
+                    target = row[0]
+                else:
+                    target = str(uuid.uuid4())
+                    con.execute(
+                        "INSERT INTO users (id, tenant_id, role, username, password_hash, display_name,"
+                        " telegram_chat_id, is_active, created_at) VALUES (?, NULL, ?, ?, ?, ?, ?, 1, ?)",
+                        (target, "platform_admin", "tg%d" % tg, "", "ادمین %d" % tg, tg, now))
+                    print("✅ ادمین جدید ساخته شد برای آی‌دی", tg)
+                    print("   (دسترسی ربات همین حالا فعال است؛ برای ورود به پنل وب رمز لازم دارد)")
+            else:
+                if not row:
+                    con.execute("ROLLBACK"); print("این آی‌دی ادمین نبود:", tg); raise SystemExit(0)
+                con.execute("UPDATE users SET is_active = 0, bot_link_code = NULL,"
+                            " bot_link_code_expires_at = NULL WHERE id = ?", (row[0],))
+                print("✅ غیرفعال شد:", row[1])
+                target = row[0]
+            con.execute(
+                "INSERT INTO audit_log (id, tenant_id, actor_type, actor_id, action, entity, entity_id,"
+                " data, created_at) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?)",
+                (str(uuid.uuid4()), "system", "ops-workflow", os.environ["OPS_ACTION"],
+                 "platform_admin", str(target), '{"via":"ops"}', now))
+            con.execute("COMMIT")
+            PY
                 ;;
+
             esac
