@@ -34,7 +34,16 @@
  * the 9.7 MB native libsql binding. Complexity for 2 MB is not worth it.
  *
  * Re-measure with `Ops → status` before raising either limit.
+ *
+ * **Log paths are explicit, and that is a bug fix, not tidiness.** pm2's default is
+ * `~/.pm2/logs/<name>-out.log`, and the deploy, the health check and all three `Ops`
+ * actions each hardcoded that guess. The first real deploy then captured no demo URL and
+ * printed an empty tunnel error log — and with the path guessed, there was no way to tell
+ * "cloudflared logged nothing" from "we read the wrong file". Naming the files here makes
+ * one place authoritative for every reader.
  */
+const LOGS = "data/logs";
+
 module.exports = {
   apps: [
     {
@@ -56,6 +65,8 @@ module.exports = {
       // room for an SSR spike.
       max_memory_restart: "240M",
       autorestart: true,
+      out_file: `${LOGS}/web-out.log`,
+      error_file: `${LOGS}/web-error.log`,
     },
     {
       name: "arayeshgar-bots",
@@ -72,6 +83,8 @@ module.exports = {
       autorestart: true,
       // The worker drains the outbox every 30s, so a crash loop would hammer Telegram.
       restart_delay: 5000,
+      out_file: `${LOGS}/bots-out.log`,
+      error_file: `${LOGS}/bots-error.log`,
     },
     {
       // The only way in from the internet. Nothing here opens a port: cloudflared makes an
@@ -102,6 +115,10 @@ module.exports = {
       max_memory_restart: "120M",
       autorestart: true,
       restart_delay: 5000,
+      // The demo URL exists *only* in this file — Cloudflare has no API to ask for it
+      // later. So this is the one log path the product genuinely depends on.
+      out_file: `${LOGS}/tunnel-out.log`,
+      error_file: `${LOGS}/tunnel-error.log`,
     },
   ],
 };

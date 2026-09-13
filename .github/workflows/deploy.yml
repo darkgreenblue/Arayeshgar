@@ -198,7 +198,11 @@ jobs:
             "PROJ='$PROJ' bash -s" <<'REMOTE'
           set -e
           DIR="$HOME/$PROJ"
-          mkdir -p "$DIR/data/uploads" "$DIR/.prev"
+          # `data/logs` مقصد صریح لاگ‌هاست (به `ecosystem.config.cjs` نگاه کنید). pm2 پوشه
+          # را خودش نمی‌سازد و بی‌آن بی‌صدا هیچ لاگی نمی‌نویسد.
+          mkdir -p "$DIR/data/uploads" "$DIR/data/logs" "$DIR/.prev"
+          TUN_OUT="$DIR/data/logs/tunnel-out.log"
+          TUN_ERR="$DIR/data/logs/tunnel-error.log"
 
           # تور ایمنی (قاعده‌ی ۸): نسخه‌ی قبلی کنار گذاشته می‌شود تا اگر سلامت رد شد
           # بتوان همان لحظه برگرداندش. `data/` هرگز داخل این کپی نیست و هرگز جابجا نمی‌شود.
@@ -271,14 +275,16 @@ jobs:
           URL=""
           case "$APPS" in
             *"$PROJ-tunnel"*)
-              : > "$HOME/.pm2/logs/$PROJ-tunnel-out.log" 2>/dev/null || true
-              : > "$HOME/.pm2/logs/$PROJ-tunnel-error.log" 2>/dev/null || true
-              pm2 restart "$PROJ-tunnel" >/dev/null 2>&1 || true
-              URL=""
+              # **تونل delete و از نو start می‌شود، نه restart.** دو دلیل: (الف) مسیر
+              # لاگ در `ecosystem.config.cjs` عوض شده و `reload` همیشه پیکربندی تازه‌ی
+              # stdio را اعمال نمی‌کند؛ (ب) آدرس quick tunnel در هر بالا آمدن عوض
+              # می‌شود، پس چیزی برای حفظ کردن وجود ندارد. فقط اپ خودمان، با نام صریح.
+              pm2 delete "$PROJ-tunnel" >/dev/null 2>&1 || true
+              rm -f "$TUN_OUT" "$TUN_ERR"
+              pm2 start ecosystem.config.cjs --only "$PROJ-tunnel" --update-env
               for i in $(seq 1 30); do
                 URL="$(grep -ohE 'https://[a-z0-9-]+\.trycloudflare\.com' \
-                       "$HOME/.pm2/logs/$PROJ-tunnel-out.log" \
-                       "$HOME/.pm2/logs/$PROJ-tunnel-error.log" 2>/dev/null | tail -1)"
+                       "$TUN_OUT" "$TUN_ERR" 2>/dev/null | tail -1)"
                 [ -n "$URL" ] && break
                 sleep 2
               done
@@ -286,9 +292,21 @@ jobs:
                 printf '%s\n' "$URL" > "$DIR/data/demo-url.txt"
                 echo "🔗 آدرس دمو: $URL"
               else
-                echo "⚠️  آدرس تونل در ۶۰ ثانیه پیدا نشد. لاگ:"
-                tail -n 20 "$HOME/.pm2/logs/$PROJ-tunnel-error.log" 2>/dev/null || true
-                echo "   (دیپلوی به این خاطر قرمز نمی‌شود؛ سایت بالاست، فقط لینکش را باید از Ops → status گرفت)"
+                # قبلاً اینجا فقط یک ⚠️ بود و دیپلوی سبز می‌شد. اولین دیپلوی واقعی همین
+                # کار را کرد: هر ۱۶ گام سبز و **هیچ لینک دمویی وجود نداشت**. دمو کلِ
+                # چیزی است که این دیپلوی تحویل می‌دهد، پس نبودنش سبز نیست.
+                echo "❌ آدرس تونل در ۶۰ ثانیه پیدا نشد — یعنی لینک دمویی وجود ندارد."
+                echo "── تشخیص (به‌جای حدس زدن) ──"
+                for f in "$TUN_OUT" "$TUN_ERR"; do
+                  if [ -f "$f" ]; then
+                    echo "  $f: $(wc -c < "$f") بایت"
+                    tail -n 20 "$f" 2>/dev/null | sed 's/^/    /'
+                  else
+                    echo "  $f: وجود ندارد ← pm2 جای دیگری می‌نویسد"
+                  fi
+                done
+                pm2 describe "$PROJ-tunnel" 2>/dev/null \
+                  | grep -iE 'status|script|out log|error log|restarts|exec cwd' | sed 's/^/  /' || true
               fi
               ;;
           esac
@@ -375,9 +393,18 @@ jobs:
             # ۲۰۰ گرفت — چون `/` هرگز `requireTenant()` را صدا نمی‌زند و لِی‌اوت صفحه‌ی
             # «متصل نیست» را با ۲۰۰ برمی‌گرداند. یعنی گاردی که سبز بود و هیچ‌چیز ثابت
             # نمی‌کرد. به‌جایش `/api/health` خودش می‌گوید این هاست به کدام مستاجر رسید.
-            HOST="$(sed -e 's#^https\?://##' -e 's#/.*##' "$DIR/data/demo-url.txt" 2>/dev/null | tr -d '[:space:]')"
-            if [ -z "$HOST" ]; then
-              echo "  ⚠️  دمو: هاست‌نیم تونل ذخیره نشده، پس قابل آزمودن نیست"
+            HOST="$(sed -e 's#^https\?://##' -e 's#/.*##' "$DIR/data/demo-url.txt" 2>/dev/null | tr -d '[:space:]' || true)"
+            case "$APPS" in *"$PROJ-tunnel"*) WANT_DEMO=yes ;; *) WANT_DEMO="" ;; esac
+            if [ -z "$HOST" ] && [ -n "$WANT_DEMO" ]; then
+              # **این شاخه قبلاً ⚠️ می‌داد و exit 0.** اولین دیپلوی واقعی از همین‌جا سبز
+              # رد شد بدون اینکه لینک دمویی وجود داشته باشد — یک گاردِ دیگر که فقط
+              # می‌توانست سبز باشد. تونل دیپلوی شده و آدرسی نیست ⇒ خرابی است، نه «نامعلوم».
+              echo "❌ دمو: تونل بالا آمده ولی هیچ آدرسی ذخیره نشده."
+              echo "   یعنی محصول بالاست و هیچ لینکی برای نشان دادن به آرایشگر وجود ندارد."
+              echo "   تشخیصِ تونل در استپ قبلی چاپ شده. اپ‌ها دست‌نخورده می‌مانند."
+              exit 1
+            elif [ -z "$HOST" ]; then
+              echo "  ⬜ دمو: تونل دیپلوی نشده، پس لینکی هم انتظار نداریم"
             else
               h=""
               for i in $(seq 1 10); do
@@ -413,8 +440,12 @@ jobs:
           fi
 
           echo "❌ سلامت رد شد. آخرین خطاها:"
-          tail -n 40 "$HOME/.pm2/logs/$PROJ-web-error.log"  2>/dev/null || true
-          tail -n 40 "$HOME/.pm2/logs/$PROJ-bots-error.log" 2>/dev/null || true
+          # مسیرهای صریح `ecosystem.config.cjs`، نه حدسِ پیش‌فرض pm2 — چون همان حدس باعث
+          # شد لاگ تونل «خالی» به نظر برسد و علت واقعی معلوم نشود.
+          for f in "$DIR/data/logs/web-error.log" "$DIR/data/logs/bots-error.log"; do
+            echo "── $f ──"
+            tail -n 40 "$f" 2>/dev/null || echo "(نیست)"
+          done
 
           if [ -d "$DIR/.prev/web" ]; then
             echo "↩️  برگشت به نسخه‌ی قبلی"
