@@ -412,7 +412,17 @@ jobs:
             code, desc = d.get("error_code"), (d.get("description") or "")
             print("  %s: ❌ %s — %s" % (i, code, desc))
             low = desc.lower()
-            if "cant initiate" in low.replace("'", "") or "bot cant initiate" in low.replace("'", ""):
+            # Matched on "initiate conversation" rather than stripping the apostrophe out of
+            # "cant" -- that stripping needed a literal apostrophe character inside a body
+            # that is itself wrapped in python3 -c followed by an apostrophe ... apostrophe
+            # for the shell, which closed the shell string early and corrupted everything
+            # after it: this ran, produced a Python SyntaxError, and the step exited 1. Every
+            # apostrophe in this whole block, comments included, is banned for the same
+            # reason -- the shell scans for the closing quote character by character and does
+            # not know Python comments exist. "initiate conversation" appears in the Telegram
+            # error text regardless of which apostrophe form it uses, so no apostrophe of any
+            # kind is needed here at all.
+            if "initiate conversation" in low:
                 print("     ⇒ **آی‌دی درست است ولی شما هنوز ربات را start نکرده‌اید.**")
                 print("        ربات را در تلگرام باز کنید و یک بار Start بزنید. تمام.")
             elif "chat not found" in low:
