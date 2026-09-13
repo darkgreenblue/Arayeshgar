@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { ThemeStyle } from "@/components/ThemeStyle";
 import { currentTenant } from "@/lib/tenant";
-import { THEMES, isThemeKey } from "@arayeshgar/themes";
+import { isThemeKey } from "@arayeshgar/themes";
 
 export async function generateMetadata(): Promise<Metadata> {
   const r = await currentTenant();
@@ -38,8 +38,9 @@ export default async function SiteLayout({ children }: { children: ReactNode }) 
       <ThemeStyle branding={r.tenant.branding} />
       {children}
       {r.tenant.status === "demo" && (
-        <div className="fixed bottom-0 start-0 z-50 m-2 rounded-lg bg-amber-400 px-2 py-0.5 text-[11px] font-bold text-black shadow">
-          نسخه نمایشی · {THEMES[theme].label}
+        // برند خودِ مستاجر، نه رنگ ثابت — و بدون نام داخلیِ تم، که برای مشتری بی‌معنی است.
+        <div className="fixed bottom-0 start-0 z-50 m-2 rounded-lg bg-[var(--brand)] px-2 py-0.5 text-[11px] font-bold text-[var(--brand-contrast)] shadow">
+          نسخه نمایشی
         </div>
       )}
     </div>
