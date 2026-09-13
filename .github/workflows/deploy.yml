@@ -201,8 +201,10 @@ jobs:
           # `data/logs` مقصد صریح لاگ‌هاست (به `ecosystem.config.cjs` نگاه کنید). pm2 پوشه
           # را خودش نمی‌سازد و بی‌آن بی‌صدا هیچ لاگی نمی‌نویسد.
           mkdir -p "$DIR/data/uploads" "$DIR/data/logs" "$DIR/.prev"
-          TUN_OUT="$DIR/data/logs/tunnel-out.log"
-          TUN_ERR="$DIR/data/logs/tunnel-error.log"
+          # گلاب، نه نام دقیق: pm2 این سرور آی‌دی پروسه را به نام فایل می‌چسباند
+          # (`tunnel-out-14.log`) و آی‌دی با هر بازسازی عوض می‌شود. `merge_logs: true` این
+          # پسوند را خاموش می‌کند، ولی خواندن با گلاب یعنی اگر نکرد هم آدرس گم نمی‌شود.
+          TUN_GLOB="$DIR/data/logs/tunnel-*.log"
 
           # تور ایمنی (قاعده‌ی ۸): نسخه‌ی قبلی کنار گذاشته می‌شود تا اگر سلامت رد شد
           # بتوان همان لحظه برگرداندش. `data/` هرگز داخل این کپی نیست و هرگز جابجا نمی‌شود.
@@ -280,11 +282,13 @@ jobs:
               # stdio را اعمال نمی‌کند؛ (ب) آدرس quick tunnel در هر بالا آمدن عوض
               # می‌شود، پس چیزی برای حفظ کردن وجود ندارد. فقط اپ خودمان، با نام صریح.
               pm2 delete "$PROJ-tunnel" >/dev/null 2>&1 || true
-              rm -f "$TUN_OUT" "$TUN_ERR"
+              # پاک کردن *همه‌ی* لاگ‌های تونل، از جمله پسوندهای آی‌دیِ اجراهای قبلی —
+              # وگرنه آدرسِ یک تونلِ مرده به‌عنوان آدرس فعلی برداشته می‌شود.
+              rm -f $TUN_GLOB
               pm2 start ecosystem.config.cjs --only "$PROJ-tunnel" --update-env
               for i in $(seq 1 30); do
                 URL="$(grep -ohE 'https://[a-z0-9-]+\.trycloudflare\.com' \
-                       "$TUN_OUT" "$TUN_ERR" 2>/dev/null | tail -1)"
+                       $TUN_GLOB 2>/dev/null | tail -1)"
                 [ -n "$URL" ] && break
                 sleep 2
               done
@@ -297,13 +301,13 @@ jobs:
                 # چیزی است که این دیپلوی تحویل می‌دهد، پس نبودنش سبز نیست.
                 echo "❌ آدرس تونل در ۶۰ ثانیه پیدا نشد — یعنی لینک دمویی وجود ندارد."
                 echo "── تشخیص (به‌جای حدس زدن) ──"
-                for f in "$TUN_OUT" "$TUN_ERR"; do
-                  if [ -f "$f" ]; then
-                    echo "  $f: $(wc -c < "$f") بایت"
-                    tail -n 20 "$f" 2>/dev/null | sed 's/^/    /'
-                  else
-                    echo "  $f: وجود ندارد ← pm2 جای دیگری می‌نویسد"
-                  fi
+                echo "  محتوای $DIR/data/logs:"
+                ls -l "$DIR/data/logs" 2>/dev/null | tail -n +2 | sed 's/^/    /' \
+                  || echo "    (پوشه وجود ندارد)"
+                for f in $TUN_GLOB; do
+                  [ -f "$f" ] || continue
+                  echo "  $f — $(wc -c < "$f") بایت:"
+                  tail -n 25 "$f" 2>/dev/null | sed 's/^/    /'
                 done
                 pm2 describe "$PROJ-tunnel" 2>/dev/null \
                   | grep -iE 'status|script|out log|error log|restarts|exec cwd' | sed 's/^/  /' || true

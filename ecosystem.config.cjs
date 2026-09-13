@@ -59,6 +59,22 @@
 const HERE = __dirname;
 const LOGS = `${HERE}/data/logs`;
 
+// **`merge_logs` is why the demo URL went missing twice.** This server's pm2 appends the
+// process id to whatever filename you give it, so `tunnel-out.log` is actually written as
+// `tunnel-out-14.log` — and the id changes every time the app is recreated. `pm2 describe`
+// on the failed deploy said so outright:
+//
+//     out log path │ /home/ubuntu/arayeshgar/data/logs/tunnel-out-14.log
+//
+// `merge_logs: true` turns that suffix off (its one documented job). Readers *also* glob
+// `<name>-out*.log`, so a pm2 that suffixes anyway still gets found — this is the one path
+// the product depends on, and two independent ways of being right is proportionate.
+const logs = (name) => ({
+  out_file: `${LOGS}/${name}-out.log`,
+  error_file: `${LOGS}/${name}-error.log`,
+  merge_logs: true,
+});
+
 module.exports = {
   apps: [
     {
@@ -80,8 +96,7 @@ module.exports = {
       // room for an SSR spike.
       max_memory_restart: "240M",
       autorestart: true,
-      out_file: `${LOGS}/web-out.log`,
-      error_file: `${LOGS}/web-error.log`,
+      ...logs("web"),
     },
     {
       name: "arayeshgar-bots",
@@ -98,8 +113,7 @@ module.exports = {
       autorestart: true,
       // The worker drains the outbox every 30s, so a crash loop would hammer Telegram.
       restart_delay: 5000,
-      out_file: `${LOGS}/bots-out.log`,
-      error_file: `${LOGS}/bots-error.log`,
+      ...logs("bots"),
     },
     {
       // The only way in from the internet. Nothing here opens a port: cloudflared makes an
@@ -132,8 +146,7 @@ module.exports = {
       restart_delay: 5000,
       // The demo URL exists *only* in this file — Cloudflare has no API to ask for it
       // later. So this is the one log path the product genuinely depends on.
-      out_file: `${LOGS}/tunnel-out.log`,
-      error_file: `${LOGS}/tunnel-error.log`,
+      ...logs("tunnel"),
     },
   ],
 };
