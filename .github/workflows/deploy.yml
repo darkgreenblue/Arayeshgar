@@ -233,8 +233,28 @@ jobs:
           node "$DIR/bots/migrate.js"
 
           cd "$DIR"
+
+          # **کدام اپ‌ها بالا می‌آیند، از روی واقعیت تصمیم می‌شود نه از روی عادت.**
+          # بدون توکن ربات، پروسه‌ی ربات‌ها هیچ کاری ندارد: `syncBots` هیچ pollerی پیدا
+          # نمی‌کند، و با `deposit: false` پیش‌فرض، رزروها خودکار تأیید می‌شوند پس چیزی
+          # برای منقضی کردن یا فرستادن نیست. ۱۲۵ مگابایت رمِ یک سرور مشترک برای یک
+          # پروسه‌ی بی‌کار خرج نمی‌شود.
+          APPS="$PROJ-web"
+          if grep -qE '^DEMO_(TELEGRAM|BALE)_BOT_TOKEN=.+' "$DIR/.env"; then
+            APPS="$APPS,$PROJ-bots"
+            echo "توکن ربات هست ⇒ هر دو اپ بالا می‌آیند"
+          else
+            echo "توکن ربات نیست ⇒ فقط وب بالا می‌آید (ربات‌ها کاری ندارند)"
+            # اگر از دیپلوی قبلی مانده، خاموشش کن. فقط اپ خودمان — با نام صریح.
+            if pm2 jlist 2>/dev/null | grep -q "\"name\":\"$PROJ-bots\""; then
+              pm2 delete "$PROJ-bots" || true
+              echo "پروسه‌ی بی‌کار ربات‌ها حذف شد تا رم سرور را نگیرد"
+            fi
+          fi
+          echo "APPS=$APPS" > "$DIR/.deployed-apps"
+
           # `--only` یعنی هیچ اپ محصول دیگری لمس نمی‌شود، حتی اگر ecosystem چیز دیگری داشت.
-          pm2 startOrReload ecosystem.config.cjs --only "$PROJ-web,$PROJ-bots" --update-env
+          pm2 startOrReload ecosystem.config.cjs --only "$APPS" --update-env
           REMOTE
 
       - name: health check, and roll back if it fails
@@ -243,22 +263,38 @@ jobs:
           ssh -i ~/.ssh/deploy_key -o BatchMode=yes "$SERVER_USER@$SERVER_HOST" \
             "PROJ='$PROJ' WEB_PORT='$WEB_PORT' BOTS_PORT='$BOTS_PORT' bash -s" <<'REMOTE'
           DIR="$HOME/$PROJ"
+          # فقط چیزی را چک کن که واقعاً بالا آمده. اگر توکن رباتی نبود، ربات‌ها دیپلوی
+          # نشده‌اند و انتظار جواب از پورتشان یعنی یک دیپلوی سالم را قرمز کردن.
+          . "$DIR/.deployed-apps"
+          case "$APPS" in *"$PROJ-bots"*) WANT_BOTS=yes ;; *) WANT_BOTS="" ;; esac
+          echo "اپ‌های این دیپلوی: $APPS"
+
           ok=""
           for i in $(seq 1 30); do
             w="$(curl -s -m 3 "http://127.0.0.1:$WEB_PORT/api/health" 2>/dev/null || true)"
-            b="$(curl -s -m 3 "http://127.0.0.1:$BOTS_PORT/health" 2>/dev/null || true)"
-            case "$w$b" in *'"ok":true'*'"ok":true'*) ok=yes; break;; esac
+            b=""
+            [ -n "$WANT_BOTS" ] && b="$(curl -s -m 3 "http://127.0.0.1:$BOTS_PORT/health" 2>/dev/null || true)"
+            web_ok=""; bots_ok=""
+            case "$w" in *'"ok":true'*) web_ok=yes ;; esac
+            if [ -n "$WANT_BOTS" ]; then
+              case "$b" in *'"ok":true'*) bots_ok=yes ;; esac
+            else
+              bots_ok=yes
+            fi
+            [ -n "$web_ok" ] && [ -n "$bots_ok" ] && { ok=yes; break; }
             sleep 2
           done
           if [ -n "$ok" ]; then
-            echo "✅ سلامت: هر دو اپ جواب دادند"
+            echo "✅ سلامت: هرچه دیپلوی شد جواب داد"
             echo "  web:  $w"
-            echo "  bots: $b"
+            [ -n "$WANT_BOTS" ] && echo "  bots: $b" || echo "  bots: دیپلوی نشده (توکن ربات نیست)"
             # هیچ پورتی روی اینترنت باز نمی‌شود. این را اینجا *اندازه می‌گیریم* نه فرض،
             # چون یک بار همین اشتباه شد: hono بدون hostname به 0.0.0.0 بایند می‌کند.
             echo "── آدرس بایند ──"
             BAD=""
-            for port in "$WEB_PORT" "$BOTS_PORT"; do
+            PORTS="$WEB_PORT"
+            [ -n "$WANT_BOTS" ] && PORTS="$PORTS $BOTS_PORT"
+            for port in $PORTS; do
               line="$(ss -ltn 2>/dev/null | grep ":$port " || true)"
               echo "  $line"
               case "$line" in
@@ -272,7 +308,7 @@ jobs:
               pm2 stop "$PROJ-web" "$PROJ-bots" 2>/dev/null || true
               exit 1
             fi
-            echo "  هر دو روی 127.0.0.1 ✅"
+            echo "  همه روی 127.0.0.1 ✅"
             pm2 jlist 2>/dev/null | python3 -c '
           import json, sys
           for a in json.load(sys.stdin):
@@ -293,7 +329,7 @@ jobs:
             cp -a "$DIR/.prev/web" "$DIR/web"
             cp -a "$DIR/.prev/bots" "$DIR/bots" 2>/dev/null || true
             cp -a "$DIR/.prev/drizzle" "$DIR/drizzle" 2>/dev/null || true
-            cd "$DIR" && pm2 startOrReload ecosystem.config.cjs --only "$PROJ-web,$PROJ-bots" --update-env
+            cd "$DIR" && pm2 startOrReload ecosystem.config.cjs --only "$APPS" --update-env
             echo "برگشت انجام شد — سایت روی نسخه‌ی قبلی است"
           else
             echo "نسخه‌ی قبلی وجود ندارد (اولین دیپلوی)، پس برگشتی ممکن نیست."

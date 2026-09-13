@@ -55,13 +55,20 @@ jobs:
             exit 0
           fi
 
+          # دیپلوی می‌نویسد کدام اپ‌ها واقعاً بالا آمده‌اند. بدون توکن ربات، ربات‌ها
+          # دیپلوی نمی‌شوند — و هشدار دادن برای اپی که عمداً وجود ندارد یعنی آموزش دادن
+          # به خودتان که هشدارها را جدی نگیرید.
+          APPS="$PROJ-web,$PROJ-bots"
+          [ -f "$DIR/.deployed-apps" ] && . "$DIR/.deployed-apps"
+          echo "اپ‌های دیپلوی‌شده: $APPS"
+
           PROBLEMS=""
           note() { echo "  $1"; }
           bad()  { echo "  ❌ $1"; PROBLEMS="$PROBLEMS
           - $1"; }
 
           echo "── pm2 ──"
-          for app in "$PROJ-web" "$PROJ-bots"; do
+          for app in $(printf '%s' "$APPS" | tr ',' ' '); do
             ST="$(pm2 jlist 2>/dev/null | PM2_APP="$app" python3 -c '
           import json, os, sys
           want = os.environ["PM2_APP"]
@@ -84,15 +91,23 @@ jobs:
             esac
           done
 
+          case "$APPS" in *"$PROJ-bots"*) HAS_BOTS=yes ;; *) HAS_BOTS="" ;; esac
+
           echo "── endpoint ──"
           W="$(curl -s -m 5 "http://127.0.0.1:$WEB_PORT/api/health" 2>/dev/null || true)"
-          B="$(curl -s -m 5 "http://127.0.0.1:$BOTS_PORT/health" 2>/dev/null || true)"
           case "$W" in *'"ok":true'*) note "web: ok" ;; *) bad "وب جواب سلامت نداد: ${W:-(خالی)}" ;; esac
-          case "$B" in *'"ok":true'*) note "bots: ok" ;; *) bad "ربات‌ها جواب سلامت ندادند: ${B:-(خالی)}" ;; esac
+          if [ -n "$HAS_BOTS" ]; then
+            B="$(curl -s -m 5 "http://127.0.0.1:$BOTS_PORT/health" 2>/dev/null || true)"
+            case "$B" in *'"ok":true'*) note "bots: ok" ;; *) bad "ربات‌ها جواب سلامت ندادند: ${B:-(خالی)}" ;; esac
+          else
+            note "bots: دیپلوی نشده — بررسی نمی‌شود"
+          fi
 
           # همان قاعده‌ی «هیچ پورتی عمومی نیست» — یک بار نقض شد، پس اندازه‌گیری می‌شود.
           echo "── آدرس بایند ──"
-          for port in "$WEB_PORT" "$BOTS_PORT"; do
+          PORTS="$WEB_PORT"
+          [ -n "$HAS_BOTS" ] && PORTS="$PORTS $BOTS_PORT"
+          for port in $PORTS; do
             L="$(ss -ltn 2>/dev/null | grep ":$port " || true)"
             case "$L" in
               *"127.0.0.1:$port"*) note "پورت $port روی loopback" ;;
