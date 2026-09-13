@@ -23,7 +23,12 @@ export const DEFAULT_DEPOSIT_SETTINGS: DepositSettings = {
 export const DEFAULT_FEATURES: TenantFeatures = {
   deposit: false,
   telegram_bot: true,
-  bale_bot: true,
+  // **Off by owner's decision: Telegram only for now.** Telegram is the differentiator being
+  // demoed — a booking arriving on the barber's phone and being approved with one tap — and a
+  // second chat platform is surface that has to work in the demo without adding to the pitch.
+  // The Bale code is kept, not deleted: it works, the flow is identical, and a flag is the
+  // cheapest possible way back. Flip it per tenant when a customer actually wants Bale.
+  bale_bot: false,
   gallery: true,
   reviews: false,
   faq: true,

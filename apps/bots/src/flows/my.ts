@@ -13,6 +13,7 @@ import {
   STATUS_LABELS_FA,
   toPersianDigits,
 } from "@arayeshgar/core";
+import { isolate } from "@arayeshgar/core/utils/phone";
 import { decode, encode, matchesShort } from "../platform/callback";
 import { replyOrEdit, safeAnswerCallback, type BotCtx } from "../platform/bot";
 import { InlineKeyboard } from "grammy";
@@ -30,7 +31,7 @@ export function registerMyFlow(bot: Bot<BotCtx>, db: Db) {
       if (canCancel) kb.text("لغو این نوبت", encode({ a: "cancel", b: shortOf(r.booking.id) }));
       await ctx.reply(
         [
-          `کد رزرو: ${r.booking.code}`,
+          `کد رزرو: ${isolate(r.booking.code)}`,
           `خدمت: ${r.service.name}`,
           ctx.tenant.mode !== "solo" ? `آرایشگر: ${r.staff.name}` : "",
           `زمان: ${formatInstantFa(r.booking.startAt, ctx.tenant.timezone)}`,
@@ -52,7 +53,10 @@ export function registerMyFlow(bot: Bot<BotCtx>, db: Db) {
     if (!target) return void (await replyOrEdit(ctx, "این رزرو پیدا نشد."));
     try {
       await cancelByCustomer(db, ctx.tenant.id, target.booking.id);
-      await replyOrEdit(ctx, `رزرو ${target.booking.code} لغو شد. برای رزرو جدید /book را بزنید.`);
+      await replyOrEdit(
+        ctx,
+        `رزرو ${isolate(target.booking.code)} لغو شد. برای رزرو جدید /book را بزنید.`,
+      );
     } catch (err) {
       await replyOrEdit(ctx, err instanceof DomainError ? err.message : "لغو ممکن نشد.");
     }

@@ -23,6 +23,7 @@ on:
             admin-list,
             admin-add,
             admin-remove,
+            bot-check,
           ]
         required: true
       lines:
@@ -358,6 +359,99 @@ jobs:
                 (str(uuid.uuid4()), "system", "ops-workflow", os.environ["OPS_ACTION"],
                  "platform_admin", str(target), '{"via":"ops"}', now))
             con.execute("COMMIT")
+            PY
+                ;;
+
+              bot-check)
+                # **چرا این اکشن وجود دارد.** اولین هشدار تلگرامی هرگز نرسید، ولی دیپلوی
+                # گفت «هشدار فرستاده شد» — چون آن استپ `curl ... -o /dev/null || true` بود
+                # و جوابِ تلگرام را نگاه نمی‌کرد. سه حالت ممکن است و از بیرون قابل تفکیک
+                # نیستند: توکن باطل · آی‌دی غلط · **یا (شایع‌ترین) کاربر هرگز ربات را
+                # /start نکرده** — تلگرام اجازه نمی‌دهد ربات اول پیام بدهد و ۴۰۳ می‌دهد.
+                # این اکشن هر سه را از هم جدا می‌کند و **هیچ‌وقت مقدار توکن را چاپ نمی‌کند.**
+                set -a; . "$DIR/.env"; set +a
+                [ -n "${DEMO_TELEGRAM_BOT_TOKEN:-}" ] \
+                  && echo "توکن: ✅ ست شده (${#DEMO_TELEGRAM_BOT_TOKEN} کاراکتر — مقدارش چاپ نمی‌شود)" \
+                  || { echo "توکن: ❌ خالی است ⇒ سکرت ARAYESHGAR_DEMO_BOT_TOKEN را بگذارید"; exit 1; }
+                echo "ADMIN_IDS: ${ADMIN_IDS:-(خالی)}"
+                echo
+                echo "── ربات کیست؟ (getMe) ──"
+                TG="https://api.telegram.org/bot$DEMO_TELEGRAM_BOT_TOKEN"
+                curl -s -m 20 "$TG/getMe" | python3 -c '
+            import json, sys
+            try:
+                d = json.load(sys.stdin)
+            except Exception:
+                print("  ❌ جواب تلگرام خوانده نشد (شاید شبکه)"); raise SystemExit(0)
+            if not d.get("ok"):
+                print("  ❌ توکن رد شد:", d.get("description"))
+                print("     ⇒ توکن باطل است. از BotFather یکی تازه بگیرید.")
+                raise SystemExit(0)
+            r = d["result"]
+            print("  ✅ @%s  (نام: %s · id: %s)" % (r.get("username"), r.get("first_name"), r.get("id")))
+            print("  لینک ربات: https://t.me/%s" % r.get("username"))
+            '
+                echo
+                echo "── آیا ربات می‌تواند به ادمین پیام بدهد؟ ──"
+                # هر آی‌دی جدا؛ فقط عددها. پیام واقعی فرستاده می‌شود چون تنها راه قطعیِ
+                # فهمیدنِ «۴۰۳: کاربر ربات را start نکرده» همین است.
+                for id in $(printf '%s' "${ADMIN_IDS:-}" | tr ',' ' '); do
+                  case "$id" in (*[!0-9-]*|'') echo "  ⏭️  «$id» عدد نیست، رد شد"; continue;; esac
+                  RESP="$(curl -s -m 20 -G "$TG/sendMessage" \
+                          --data-urlencode "chat_id=$id" \
+                          --data-urlencode "text=✅ تست اتصال آرایشگر — اگر این را می‌بینید، ربات می‌تواند به شما پیام بدهد." 2>/dev/null)"
+                  printf '%s' "$RESP" | OPS_ID="$id" python3 -c '
+            import json, os, sys
+            i = os.environ["OPS_ID"]
+            try:
+                d = json.load(sys.stdin)
+            except Exception:
+                print("  %s: ❌ جواب خوانده نشد" % i); raise SystemExit(0)
+            if d.get("ok"):
+                print("  %s: ✅ پیام رفت — تلگرام این آی‌دی باز است" % i); raise SystemExit(0)
+            code, desc = d.get("error_code"), (d.get("description") or "")
+            print("  %s: ❌ %s — %s" % (i, code, desc))
+            low = desc.lower()
+            # Matched on "initiate conversation" rather than stripping the apostrophe out of
+            # "cant" -- that stripping needed a literal apostrophe character inside a body
+            # that is itself wrapped in python3 -c followed by an apostrophe ... apostrophe
+            # for the shell, which closed the shell string early and corrupted everything
+            # after it: this ran, produced a Python SyntaxError, and the step exited 1. Every
+            # apostrophe in this whole block, comments included, is banned for the same
+            # reason -- the shell scans for the closing quote character by character and does
+            # not know Python comments exist. "initiate conversation" appears in the Telegram
+            # error text regardless of which apostrophe form it uses, so no apostrophe of any
+            # kind is needed here at all.
+            if "initiate conversation" in low:
+                print("     ⇒ **آی‌دی درست است ولی شما هنوز ربات را start نکرده‌اید.**")
+                print("        ربات را در تلگرام باز کنید و یک بار Start بزنید. تمام.")
+            elif "chat not found" in low:
+                print("     ⇒ این آی‌دی برای تلگرام وجود ندارد ⇒ OWNER_TELEGRAM_ID غلط است.")
+                print("        آی‌دی عددی را از @userinfobot بگیرید (نه یوزرنیم).")
+            elif "blocked" in low:
+                print("     ⇒ شما ربات را بلاک کرده‌اید؛ آنبلاک کنید.")
+            elif "deactivated" in low:
+                print("     ⇒ حساب غیرفعال است.")
+            '
+                done
+                echo
+                echo "── چه کسی رسیدِ رزرو را می‌گیرد؟ ──"
+                # خودِ همان کوئریِ `adminRecipients`: مستاجر + نقش + چتِ وصل‌شده.
+                python3 - <<'PY' 2>&1
+            import os, sqlite3
+            con = sqlite3.connect("file:%s?mode=ro" % os.environ["DB_PATH"], uri=True)
+            rows = con.execute(
+                "SELECT t.slug, u.role, u.username, u.telegram_chat_id, u.is_active"
+                " FROM users u LEFT JOIN tenants t ON t.id = u.tenant_id"
+                " ORDER BY u.tenant_id IS NULL, t.slug, u.role").fetchall()
+            if not rows:
+                print("  (هیچ کاربری نیست)")
+            for slug, role, uname, tg, active in rows:
+                mark = "✅" if (slug and role in ("owner", "manager") and tg and active) else "⬜"
+                print("  %s مستاجر=%-8s نقش=%-15s کاربر=%-10s چت‌تلگرام=%s" %
+                      (mark, slug or "(پلتفرم)", role, uname, tg if tg else "وصل نیست"))
+            print()
+            print("  ✅ = این ردیف رسید می‌گیرد. اگر هیچ ✅ نیست، رزروِ دمو به هیچ تلگرامی نمی‌رود.")
             PY
                 ;;
 

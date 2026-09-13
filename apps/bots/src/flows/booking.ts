@@ -26,6 +26,7 @@ import {
   type BookingPayload,
 } from "@arayeshgar/core";
 import { getEnv, tenantPublicUrl } from "@arayeshgar/core";
+import { isolate } from "@arayeshgar/core/utils/phone";
 import {
   decode,
   encode,
@@ -317,10 +318,10 @@ async function finalize(
     // copy no matter which channel they used. Here we only acknowledge.
     if (r.depositAmount > 0) {
       await ctx.reply(
-        `✅ وقت شما موقتاً رزرو شد (کد ${r.code}).\nراهنمای پرداخت بیعانه همین‌جا برایتان ارسال می‌شود…`,
+        `✅ وقت شما موقتاً رزرو شد (کد ${isolate(r.code)}).\nراهنمای پرداخت بیعانه همین‌جا برایتان ارسال می‌شود…`,
       );
     } else {
-      await ctx.reply(`✅ رزرو شما ثبت شد. کد رزرو: ${r.code}`);
+      await ctx.reply(`✅ رزرو شما ثبت شد. کد رزرو: ${isolate(r.code)}`);
     }
   } catch (err) {
     if (err instanceof DomainError) {
