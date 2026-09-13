@@ -130,6 +130,9 @@ jobs:
             APP_WEB="$PROJ-web"
             APP_BOTS="$PROJ-bots"
             DIR="$HOME/$PROJ"
+            # مسیر صریح لاگ‌ها؛ منبعِ واحدش `ecosystem.config.cjs` است. قبلاً هر اکشن
+            # `~/.pm2/logs/<name>-out.log` را حدس می‌زد و آن حدس قابل تأیید نبود.
+            LOGS="$DIR/data/logs"
 
             case "$OPS_ACTION" in
               status)
@@ -145,9 +148,12 @@ jobs:
                 # آدرس quick tunnel با هر ری‌استارت cloudflared عوض می‌شود، پس همیشه از
                 # لاگِ زنده خوانده می‌شود نه از فایلی که ممکن است کهنه باشد.
                 LIVE="$(grep -ohE 'https://[a-z0-9-]+\.trycloudflare\.com' \
-                        "$HOME/.pm2/logs/$PROJ-tunnel-out.log" \
-                        "$HOME/.pm2/logs/$PROJ-tunnel-error.log" 2>/dev/null | tail -1)"
-                SAVED="$(cat "$DIR/data/demo-url.txt" 2>/dev/null)"
+                        "$LOGS/tunnel-out.log" "$LOGS/tunnel-error.log" 2>/dev/null | tail -1)"
+                # ‏`|| true` اینجا لازم است، نه محتاطانه: `cat` روی فایلِ نبوده ۱ برمی‌گرداند
+                # و با `set -e` بالای همین اسکریپت، کلِ `Ops → status` همان‌جا می‌مرد. در
+                # اولین دیپلوی واقعی دقیقاً همین شد — تنها ابزار تشخیصِ بی‌SSH، درست وقتی
+                # لینک دمو وجود نداشت، خودش هم از کار افتاد.
+                SAVED="$(cat "$DIR/data/demo-url.txt" 2>/dev/null || true)"
                 if [ -n "$LIVE" ]; then
                   echo "🔗 $LIVE"
                   [ -n "$SAVED" ] && [ "$SAVED" != "$LIVE" ] \
@@ -156,6 +162,14 @@ jobs:
                   echo "🔗 $SAVED  ← ذخیره‌شده؛ تونل الان بالا نیست پس ممکن است کار نکند"
                 else
                   echo "⬜ لینکی نیست (تونل هنوز بالا نیامده)"
+                fi
+                # وقتی لینکی نیست، سؤال بعدی همیشه «pm2 کجا می‌نویسد؟» است. یک بار بدون
+                # جواب ماند و دیپلوی را کور کرد، پس حالا همیشه چاپ می‌شود.
+                echo "فایل‌های لاگ:"
+                if [ -d "$LOGS" ]; then
+                  ls -l "$LOGS" 2>/dev/null | tail -n +2 | awk '{printf "  %-22s %8s بایت\n", $NF, $5}'
+                else
+                  echo "  ⬜ $LOGS وجود ندارد (دیپلوی بعدی می‌سازدش)"
                 fi
                 echo
                 echo "── پروژه ──"
@@ -213,17 +227,18 @@ jobs:
                 ;;
 
               logs)
-                for a in "$APP_WEB" "$APP_BOTS"; do
+                # تونل هم هست: لاگش تنها جایی است که آدرس دمو در آن نوشته می‌شود.
+                for a in web bots tunnel; do
                   echo "════ $a ════"
-                  tail -n "$OPS_LINES" "$HOME/.pm2/logs/$a-out.log"   2>/dev/null || echo "(خالی)"
-                  tail -n "$OPS_LINES" "$HOME/.pm2/logs/$a-error.log" 2>/dev/null || echo "(خالی)"
+                  tail -n "$OPS_LINES" "$LOGS/$a-out.log"   2>/dev/null || echo "(خالی)"
+                  tail -n "$OPS_LINES" "$LOGS/$a-error.log" 2>/dev/null || echo "(خالی)"
                 done
                 ;;
 
               errors)
-                for a in "$APP_WEB" "$APP_BOTS"; do
+                for a in web bots tunnel; do
                   echo "════ $a ════"
-                  tail -n "$OPS_LINES" "$HOME/.pm2/logs/$a-error.log" 2>/dev/null || echo "(خالی)"
+                  tail -n "$OPS_LINES" "$LOGS/$a-error.log" 2>/dev/null || echo "(خالی)"
                 done
                 ;;
 
@@ -239,8 +254,7 @@ jobs:
                 echo
                 echo "لینک دمو بعد از ری‌استارت:"
                 grep -ohE 'https://[a-z0-9-]+\.trycloudflare\.com' \
-                  "$HOME/.pm2/logs/$PROJ-tunnel-out.log" \
-                  "$HOME/.pm2/logs/$PROJ-tunnel-error.log" 2>/dev/null | tail -1 \
+                  "$LOGS/tunnel-out.log" "$LOGS/tunnel-error.log" 2>/dev/null | tail -1 \
                   || echo "(پیدا نشد)"
                 ;;
 
