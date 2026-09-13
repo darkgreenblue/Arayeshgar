@@ -269,6 +269,21 @@ jobs:
           # `--only` یعنی هیچ اپ محصول دیگری لمس نمی‌شود، حتی اگر ecosystem چیز دیگری داشت.
           pm2 startOrReload ecosystem.config.cjs --only "$APPS" --update-env
 
+          # **`reload` پیکربندی stdio را عوض نمی‌کند — و همین اصلاحیه‌ی مسیر لاگ را نصفه
+          # گذاشت.** تونل چون delete+start می‌شود مسیر تازه گرفت، ولی وب و ربات‌ها reload
+          # شدند و هنوز در مسیر پیش‌فرضِ قدیمی pm2 می‌نوشتند: `Ops → errors` برای هر دو
+          # «خالی» می‌داد در حالی که پروسه‌ها سالم بودند. یعنی اگر وب کرش می‌کرد، لاگش
+          # را پیدا نمی‌کردیم. پس هر اپی که فایلِ لاگش سر جای مورد انتظار نیست، یک بار
+          # از نو start می‌شود. بار بعد شرط برقرار است و این بلوک هیچ کاری نمی‌کند.
+          for pair in "$PROJ-web:web" "$PROJ-bots:bots"; do
+            app="${pair%%:*}"; base="${pair##*:}"
+            case "$APPS" in *"$app"*) : ;; *) continue ;; esac
+            if ls "$DIR/data/logs/$base"-*.log >/dev/null 2>&1; then continue; fi
+            echo "مسیر لاگِ «$app» هنوز قدیمی است ⇒ یک بار delete+start تا stdio تازه اعمال شود"
+            pm2 delete "$app" >/dev/null 2>&1 || true
+            pm2 start ecosystem.config.cjs --only "$app" --update-env
+          done
+
           # **آدرس دمو را از لاگ تونل بیرون می‌کشیم.**
           # کلادفلر هاست‌نیم `*.trycloudflare.com` را هنگام بالا آمدن cloudflared تعیین
           # می‌کند و فقط در همان لاگ می‌نویسد؛ هیچ API ای ندارد که بعداً بپرسیم. پس اگر
