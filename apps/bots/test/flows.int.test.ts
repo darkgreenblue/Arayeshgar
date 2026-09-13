@@ -36,7 +36,9 @@ const { createSenders } = await import("../src/senders");
 const { dropBot } = await import("../src/platform/bot");
 const { encode, shortId } = await import("../src/platform/callback");
 
-async function makeTenant(opts: { deposit?: boolean; mode?: "solo" | "salon_central" } = {}) {
+async function makeTenant(
+  opts: { deposit?: boolean; mode?: "solo" | "salon_central"; bale?: boolean } = {},
+) {
   const slug = `b${randomBytes(4).toString("hex")}`;
   const [tenant] = await db
     .insert(schema.tenants)
@@ -45,7 +47,13 @@ async function makeTenant(opts: { deposit?: boolean; mode?: "solo" | "salon_cent
       name: slug,
       mode: opts.mode ?? "solo",
       branding: { ...schema.defaultBranding(slug), tagline: "تست" },
-      features: { ...schema.DEFAULT_FEATURES, deposit: opts.deposit ?? false },
+      features: {
+        ...schema.DEFAULT_FEATURES,
+        deposit: opts.deposit ?? false,
+        // `bale_bot` is off by default now (Telegram-only scope), so a test that
+        // exercises Bale has to ask for it rather than inherit it.
+        bale_bot: opts.bale ?? schema.DEFAULT_FEATURES.bale_bot,
+      },
       bookingRules: schema.DEFAULT_BOOKING_RULES,
       depositSettings: {
         ...schema.DEFAULT_DEPOSIT_SETTINGS,
@@ -353,8 +361,11 @@ describe("bot flows against a mock Bot API", () => {
     expect(String(api.last("sendMessage")!.body.text)).toContain("وصل نیست");
   });
 
+  // Bale is off by default while the product focuses on Telegram, but the guarantee this
+  // test protects — one codebase serving both platforms through a different API root — is
+  // exactly what makes turning Bale back on a flag flip instead of a project. So it opts in.
   it("the same bot code serves Bale through a different api root", async () => {
-    const f = await makeTenant();
+    const f = await makeTenant({ bale: true });
     created.push(f.tenant.id);
     dropBot(f.tenant.id, "bale");
     api.clear();
