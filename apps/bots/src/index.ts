@@ -19,6 +19,16 @@ import { pollerKey, startPolling, stopAllPolling, stopPollersNotIn } from "./pla
 import { demoTokenFor, getSharedDemoBot, publishDemoBotUsername } from "./platform/demo";
 
 process.env.SERVICE_NAME = "bots";
+/**
+ * Loopback only, and not negotiable.
+ *
+ * `serve()` passes this straight to `server.listen(port, hostname)`. Leave it out and the
+ * hostname is `undefined`, which makes Node bind every interface — so on the shared server
+ * this health endpoint would have been answering the open internet. The hard rule is that
+ * nothing here opens a public port; the Cloudflare tunnel is the only way in, and it reaches
+ * loopback from inside the box. Webhook transport goes through that same tunnel.
+ */
+export const BIND_HOST = "127.0.0.1";
 /** Stands in for a tenant id in the poller registry: the demo bots belong to no one tenant. */
 const DEMO_POLLER_ID = "shared-demo";
 const env = getEnv();
@@ -92,8 +102,11 @@ export async function syncBots(): Promise<{ ok: number; failed: number }> {
   return { ok, failed };
 }
 
-serve({ fetch: app.fetch, port: env.BOTS_PORT }, (info) => {
-  logger.info({ port: info.port, publicUrl: env.BOTS_PUBLIC_URL }, "bots http listening");
+serve({ fetch: app.fetch, port: env.BOTS_PORT, hostname: BIND_HOST }, (info) => {
+  logger.info(
+    { host: BIND_HOST, port: info.port, publicUrl: env.BOTS_PUBLIC_URL },
+    "bots http listening",
+  );
 });
 
 const stopWorker = startWorker(db, createSenders(db), env.WORKER_INTERVAL_SEC);
