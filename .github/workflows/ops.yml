@@ -148,7 +148,7 @@ jobs:
                 # آدرس quick tunnel با هر ری‌استارت cloudflared عوض می‌شود، پس همیشه از
                 # لاگِ زنده خوانده می‌شود نه از فایلی که ممکن است کهنه باشد.
                 LIVE="$(grep -ohE 'https://[a-z0-9-]+\.trycloudflare\.com' \
-                        "$LOGS/tunnel-out.log" "$LOGS/tunnel-error.log" 2>/dev/null | tail -1)"
+                        $LOGS/tunnel-*.log 2>/dev/null | tail -1)"
                 # ‏`|| true` اینجا لازم است، نه محتاطانه: `cat` روی فایلِ نبوده ۱ برمی‌گرداند
                 # و با `set -e` بالای همین اسکریپت، کلِ `Ops → status` همان‌جا می‌مرد. در
                 # اولین دیپلوی واقعی دقیقاً همین شد — تنها ابزار تشخیصِ بی‌SSH، درست وقتی
@@ -228,17 +228,30 @@ jobs:
 
               logs)
                 # تونل هم هست: لاگش تنها جایی است که آدرس دمو در آن نوشته می‌شود.
+                # گلاب چون pm2 این سرور آی‌دی پروسه را به نام فایل می‌چسباند
                 for a in web bots tunnel; do
                   echo "════ $a ════"
-                  tail -n "$OPS_LINES" "$LOGS/$a-out.log"   2>/dev/null || echo "(خالی)"
-                  tail -n "$OPS_LINES" "$LOGS/$a-error.log" 2>/dev/null || echo "(خالی)"
+                  found=""
+                  for f in $LOGS/$a-*.log; do
+                    [ -f "$f" ] || continue
+                    found=yes
+                    echo "──── $(basename "$f") ────"
+                    tail -n "$OPS_LINES" "$f" 2>/dev/null
+                  done
+                  [ -n "$found" ] || echo "(خالی)"
                 done
                 ;;
 
               errors)
                 for a in web bots tunnel; do
                   echo "════ $a ════"
-                  tail -n "$OPS_LINES" "$LOGS/$a-error.log" 2>/dev/null || echo "(خالی)"
+                  found=""
+                  for f in $LOGS/$a-error*.log; do
+                    [ -f "$f" ] || continue
+                    found=yes
+                    tail -n "$OPS_LINES" "$f" 2>/dev/null
+                  done
+                  [ -n "$found" ] || echo "(خالی)"
                 done
                 ;;
 
@@ -254,7 +267,7 @@ jobs:
                 echo
                 echo "لینک دمو بعد از ری‌استارت:"
                 grep -ohE 'https://[a-z0-9-]+\.trycloudflare\.com' \
-                  "$LOGS/tunnel-out.log" "$LOGS/tunnel-error.log" 2>/dev/null | tail -1 \
+                  $LOGS/tunnel-*.log 2>/dev/null | tail -1 \
                   || echo "(پیدا نشد)"
                 ;;
 
