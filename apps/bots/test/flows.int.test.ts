@@ -51,8 +51,10 @@ async function makeTenant(
         ...schema.DEFAULT_FEATURES,
         deposit: opts.deposit ?? false,
         // `bale_bot` is off by default now (Telegram-only scope), so a test that
-        // exercises Bale has to ask for it rather than inherit it.
-        bale_bot: opts.bale ?? schema.DEFAULT_FEATURES.bale_bot,
+        // exercises Bale has to ask for it rather than inherit it. Spread rather than
+        // `?? DEFAULT_FEATURES.bale_bot`: `TenantFeatures` is `Record<string, boolean>`, and
+        // under `noUncheckedIndexedAccess` indexing it yields `boolean | undefined`.
+        ...(opts.bale ? { bale_bot: true } : {}),
       },
       bookingRules: schema.DEFAULT_BOOKING_RULES,
       depositSettings: {
