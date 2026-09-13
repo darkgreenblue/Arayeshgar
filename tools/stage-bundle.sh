@@ -37,12 +37,12 @@ cp -a "$ROOT/apps/web/.next/static" "$OUT/web/apps/web/.next/static"
 
 # ── bots ───────────────────────────────────────────────────────────────────────────────
 mkdir -p "$OUT/bots"
-cp "$ROOT/apps/bots/dist/index.js" "$OUT/bots/index.js"
-cp "$ROOT/apps/bots/dist/migrate.js" "$OUT/bots/migrate.js"
-# Source maps are worth their disk here: `Ops → errors` is the only view into a crash,
-# and a stack trace through 2 MB of bundled output is unreadable without them.
-cp "$ROOT/apps/bots/dist/index.js.map" "$OUT/bots/index.js.map"
-cp "$ROOT/apps/bots/dist/migrate.js.map" "$OUT/bots/migrate.js.map"
+for f in index migrate bootstrap-demo; do
+  cp "$ROOT/apps/bots/dist/$f.js" "$OUT/bots/$f.js"
+  # Source maps are worth their disk here: `Ops → errors` is the only view into a crash,
+  # and a stack trace through 2 MB of bundled output is unreadable without them.
+  cp "$ROOT/apps/bots/dist/$f.js.map" "$OUT/bots/$f.js.map"
+done
 
 # The two externals, as a real (non-symlinked) tree the bundle can resolve upward from.
 # standalone's own node_modules cannot serve this: it is pnpm-shaped, so there is no
@@ -76,6 +76,35 @@ fi
 cp -a "$ROOT/packages/db/drizzle" "$OUT/drizzle"
 cp "$ROOT/ecosystem.config.cjs" "$OUT/ecosystem.config.cjs"
 
+# ── prove the process list points at files that exist ──────────────────────────────────
+# Written because it did not: `ecosystem.config.cjs` said `web/server.js` while the
+# standalone entry is `web/apps/web/server.js`, and nothing in the pipeline disagreed.
+# pm2 would have reported that app `errored`, the health check would have timed out, and
+# with no `.prev` on a first deploy the rollback branch just stops the apps — a red deploy
+# whose cause is one wrong path in a file nobody re-reads. A typo is now a staging failure.
+node - "$OUT" <<'CHECK'
+const fs = require("node:fs");
+const path = require("node:path");
+const out = process.argv[2];
+const { apps } = require(path.join(out, "ecosystem.config.cjs"));
+let bad = 0;
+for (const a of apps) {
+  // `interpreter: "none"` marks a binary found on PATH (cloudflared), not a file we ship.
+  if (a.interpreter === "none") {
+    console.log(`   ${a.name}: ${a.script} (binary on PATH, not shipped)`);
+    continue;
+  }
+  const p = path.join(out, a.script);
+  if (fs.existsSync(p)) {
+    console.log(`   ${a.name}: ${a.script} ✅`);
+  } else {
+    console.error(`❌ ${a.name}: ecosystem.config.cjs points at "${a.script}", which is not in the staged tree`);
+    bad++;
+  }
+}
+process.exit(bad ? 1 : 0);
+CHECK
+
 echo "✅ staged → $OUT"
 du -sh "$OUT" "$OUT/web" "$OUT/bots" 2>/dev/null || true
-echo "   entries: web/apps/web/server.js · bots/index.js · bots/migrate.js"
+echo "   one-shot entries: bots/migrate.js · bots/bootstrap-demo.js"

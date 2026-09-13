@@ -1,0 +1,475 @@
+name: Deploy
+
+# سرور مشترک است: محصولات درآمدزای دیگری روی همان pm2 و همان ۹۶۱ مگابایت رم زنده‌اند.
+# قواعد بند ۵-۳ و ۷ PLATFORM.md اینجا تزئینی نیستند — هر کدام یک راه شکستنِ کار یک نفر
+# دیگر را می‌بندد:
+#   • فقط اپ‌های همین پروژه لمس می‌شوند. نام اپ از ورودی ورک‌فلو گرفته نمی‌شود، هاردکد است.
+#   • `pm2 save` فقط وقتی اجرا می‌شود که همه‌ی اپ‌های سرور online باشند، وگرنه اپِ خوابیده‌ی
+#     کسی دیگر برای همیشه از لیست بوت حذف می‌شود.
+#   • `pm2 kill` هرگز. `apt` هرگز. نسخه‌ی سراسری Node هرگز عوض نمی‌شود.
+#   • هیچ پورتی روی اینترنت باز نمی‌شود؛ هر دو اپ به 127.0.0.1 بایند می‌کنند.
+#   • مقدار هیچ سکرتی چاپ نمی‌شود — ولی *نامِ* سکرت خالی چاپ می‌شود، که تشخیص را ممکن کند.
+
+on:
+  push:
+    branches: [main]
+    # قاعده‌ی ۱ (دیپلوی انتخابی): تغییر فقط-سند نباید پروسه‌ها را ری‌استارت کند.
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".github/workflows/ci.yml"
+      - ".github/workflows/ops.yml"
+  workflow_dispatch:
+
+concurrency:
+  # دو دیپلوی هم‌زمان یعنی دو rsync روی یک پوشه. صف، نه لغو: یک دیپلوی نیمه‌کاره بدتر از
+  # یک دیپلوی معطل است.
+  group: deploy-arayeshgar
+  cancel-in-progress: false
+
+env:
+  SERVER_HOST: 185.204.171.170
+  SERVER_USER: ubuntu
+  PROJ: arayeshgar
+  WEB_PORT: "8800"
+  BOTS_PORT: "8801"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # همان major سرور (v20.20.2). باینری libsql از نوع N-API است و به نسخه‌ی Node
+          # گره نخورده، ولی بیلد را با همان major می‌سازیم تا یک تفاوت کمتر باشد.
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # اگر بیلد بشکند، هیچ‌چیزی به سرور نمی‌رسد. این خودش تور ایمنی اول است.
+      - run: pnpm build
+
+      - name: stage the bundle
+        run: |
+          bash tools/stage-bundle.sh "$RUNNER_TEMP/bundle"
+          tar -czf "$RUNNER_TEMP/bundle.tgz" -C "$RUNNER_TEMP/bundle" .
+          ls -lh "$RUNNER_TEMP/bundle.tgz"
+
+      # کلید یک بار روی رانر نوشته می‌شود و بقیه‌ی استپ‌ها از همان استفاده می‌کنند.
+      # هیچ‌جا چاپ نمی‌شود؛ umask 077 یعنی فقط خودِ رانر می‌خواندش.
+      - name: prepare ssh
+        env:
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          if [ -z "$SSH_KEY" ]; then
+            echo "❌ سکرتِ خالی: VPS_SSH_KEY"
+            exit 1
+          fi
+          umask 077
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          ssh-keyscan -T 15 "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      # قاعده‌ی ۸ و مهم‌ترین گاردِ سرور مشترک: قبل از اینکه چیزی جابجا شود، ثابت کن که
+      # این سرور همان چیزی است که بیلد برایش ساخته شده و جای ما را کسی دیگر نگرفته.
+      - name: preflight
+        run: |
+          ssh -i ~/.ssh/deploy_key -o BatchMode=yes "$SERVER_USER@$SERVER_HOST" \
+            "PROJ='$PROJ' WEB_PORT='$WEB_PORT' BOTS_PORT='$BOTS_PORT' bash -s" <<'REMOTE'
+          set -e
+          fail() { echo "❌ $1"; exit 1; }
+
+          echo "── پلتفرم ──"
+          ARCH="$(uname -m)"; echo "arch: $ARCH"
+          [ "$ARCH" = "x86_64" ] || fail "باینری libsql برای x86_64 ساخته شده، سرور $ARCH است"
+          # باینری pre-built برای gnu است، نه musl. Ubuntu همیشه glibc است، ولی فرض نکن.
+          ldd --version 2>&1 | head -1
+          ldd --version 2>&1 | head -1 | grep -qiE 'glibc|GNU libc' || fail "glibc پیدا نشد (باینری gnu است نه musl)"
+
+          echo "── Node ──"
+          command -v node >/dev/null || fail "node روی سرور نیست"
+          NODE_V="$(node -v)"; echo "node: $NODE_V"
+          # Next.js 16 حداقل 20.9 می‌خواهد. نسخه‌ی سراسری را عوض نمی‌کنیم؛ فقط رد می‌کنیم.
+          node -e 'const [a,b]=process.versions.node.split(".").map(Number);
+                   if (a<20 || (a===20 && b<9)) { console.error("too old"); process.exit(1); }' \
+            || fail "Node سرور از 20.9 قدیمی‌تر است — نسخه‌ی سراسری را عوض نمی‌کنیم، با مالک تصمیم بگیرید"
+
+          echo "── تصادم با اپ‌های دیگر ──"
+          for a in "$PROJ-web" "$PROJ-bots"; do
+            if pm2 jlist 2>/dev/null | grep -q "\"name\":\"$a\""; then
+              echo "«$a»: از قبل هست — مالِ همین پروژه، reload می‌شود"
+            else
+              echo "«$a»: تازه است"
+            fi
+          done
+          # پورت‌ها: فقط وقتی مشکل است که کسی *دیگر* گرفته باشدش.
+          # به pid داخل `ss -ltnp` تکیه نمی‌کنیم — کاربر ubuntu pid پروسه‌های کاربر دیگر را
+          # نمی‌بیند، پس آن تطبیق بی‌صدا رد می‌شد. به‌جایش: اگر پورت گرفته است و اپ خودمان
+          # در pm2 هست، مالِ خودمان است و reload جایش را می‌گیرد؛ اگر نیست، دست نمی‌زنیم.
+          for pair in "$WEB_PORT:$PROJ-web" "$BOTS_PORT:$PROJ-bots"; do
+            port="${pair%%:*}"; app="${pair##*:}"
+            if ss -ltn 2>/dev/null | grep -q ":$port "; then
+              if pm2 jlist 2>/dev/null | grep -q "\"name\":\"$app\""; then
+                echo "پورت $port: اپ خودمان ($app) گرفته ✅"
+              else
+                fail "پورت $port اشغال است و هیچ اپی به نام $app در pm2 نیست — یعنی مالِ محصول دیگری است. با مالک تصمیم بگیرید؛ پورت را سرخود عوض نمی‌کنم."
+              fi
+            else
+              echo "پورت $port: آزاد ✅"
+            fi
+          done
+
+          echo "── جا ──"
+          df -h / | tail -1
+          AVAIL_MB="$(df -m / | tail -1 | awk '{print $4}')"
+          [ "$AVAIL_MB" -gt 1024 ] || fail "کمتر از ۱ گیگ دیسک آزاد است"
+          free -m | sed -n '2p;3p'
+          REMOTE
+
+      - name: ship the bundle
+        run: |
+          scp -i ~/.ssh/deploy_key -o BatchMode=yes \
+            "$RUNNER_TEMP/bundle.tgz" "$SERVER_USER@$SERVER_HOST:/tmp/$PROJ-bundle.tgz"
+
+      # `.env` روی رانر ساخته و با scp فرستاده می‌شود، نه از راه خط فرمان ssh.
+      #
+      # دلیلش امنیتی است و نه سلیقه‌ای: هر چیزی که در `ssh host "VAR=... bash -s"` بیاید
+      # روی سرور در `ps` دیده می‌شود، و سرور **مشترک** است. به‌علاوه یک `'` داخل یک سکرت
+      # کل کوتیشن را می‌شکست. قاعده‌ی ۲ هم همین را می‌خواهد: یک منبع واحد برای `.env`.
+      - name: build the .env (single source) and send it
+        env:
+          SESSION_SECRET: ${{ secrets.ARAYESHGAR_SESSION_SECRET }}
+          OWNER_TELEGRAM_ID: ${{ secrets.OWNER_TELEGRAM_ID }}
+          DEMO_TELEGRAM_BOT_TOKEN: ${{ secrets.ARAYESHGAR_DEMO_BOT_TOKEN }}
+          DEMO_BALE_BOT_TOKEN: ${{ secrets.ARAYESHGAR_DEMO_BALE_TOKEN }}
+          BASE_DOMAIN: ${{ secrets.ARAYESHGAR_BASE_DOMAIN }}
+        run: |
+          # نامِ سکرتِ خالی چاپ می‌شود، مقدارش هرگز (قاعده‌ی ۵).
+          if [ -z "$SESSION_SECRET" ]; then
+            echo "❌ سکرتِ لازم خالی است: ARAYESHGAR_SESSION_SECRET"
+            echo "   بدون این، هر دو اپ در بوت می‌شکنند — پس دیپلوی انجام نمی‌شود."
+            exit 1
+          fi
+          # اسکیمای zod حداقل ۳۲ کاراکتر می‌خواهد. اگر کوتاه باشد اپ *بعد از* دیپلوی
+          # می‌شکند، پس همین‌جا جلویش را می‌گیریم. طول چاپ می‌شود، مقدار هرگز.
+          if [ "${#SESSION_SECRET}" -lt 32 ]; then
+            echo "❌ ARAYESHGAR_SESSION_SECRET فقط ${#SESSION_SECRET} کاراکتر است؛ حداقل ۳۲ لازم است."
+            echo "   یک رشته‌ی تصادفی بلندتر بگذارید."
+            exit 1
+          fi
+          for n in OWNER_TELEGRAM_ID DEMO_TELEGRAM_BOT_TOKEN DEMO_BALE_BOT_TOKEN BASE_DOMAIN; do
+            eval "v=\$$n"
+            [ -n "$v" ] || echo "⚠️  سکرتِ خالی (اختیاری، محصول بی‌آن هم بالا می‌آید): $n"
+          done
+
+          DIR="/home/$SERVER_USER/$PROJ"
+          umask 077
+          # مسیر دیتابیس مطلق است، چون درختِ دیپلوی `pnpm-workspace.yaml` ندارد تا مسیر
+          # نسبی را لنگر بزند و هر پروسه از cwd خودش جای دیگری را می‌فهمید.
+          cat > "$RUNNER_TEMP/env" <<ENVFILE
+          NODE_ENV=production
+          BASE_DOMAIN=${BASE_DOMAIN:-localhost}
+          PUBLIC_URL_SCHEME=https
+          DATABASE_URL=$DIR/data/$PROJ.db
+          MIGRATIONS_DIR=$DIR/drizzle
+          SESSION_SECRET=$SESSION_SECRET
+          UPLOADS_DIR=$DIR/data/uploads
+          LOG_LEVEL=info
+          BOT_TRANSPORT=polling
+          BOTS_PORT=$BOTS_PORT
+          ADMIN_IDS=$OWNER_TELEGRAM_ID
+          DEMO_TELEGRAM_BOT_TOKEN=$DEMO_TELEGRAM_BOT_TOKEN
+          DEMO_BALE_BOT_TOKEN=$DEMO_BALE_BOT_TOKEN
+          WORKER_INTERVAL_SEC=30
+          ENVFILE
+          # فقط تعداد خطوط، هرگز محتوا.
+          echo "‏.env ساخته شد ($(wc -l < "$RUNNER_TEMP/env") خط)"
+          scp -i ~/.ssh/deploy_key -o BatchMode=yes \
+            "$RUNNER_TEMP/env" "$SERVER_USER@$SERVER_HOST:/tmp/$PROJ.env"
+
+      - name: deploy
+        run: |
+          ssh -i ~/.ssh/deploy_key -o BatchMode=yes "$SERVER_USER@$SERVER_HOST" \
+            "PROJ='$PROJ' bash -s" <<'REMOTE'
+          set -e
+          DIR="$HOME/$PROJ"
+          mkdir -p "$DIR/data/uploads" "$DIR/.prev"
+
+          # تور ایمنی (قاعده‌ی ۸): نسخه‌ی قبلی کنار گذاشته می‌شود تا اگر سلامت رد شد
+          # بتوان همان لحظه برگرداندش. `data/` هرگز داخل این کپی نیست و هرگز جابجا نمی‌شود.
+          if [ -d "$DIR/web" ]; then
+            rm -rf "$DIR/.prev/web" "$DIR/.prev/bots" "$DIR/.prev/drizzle"
+            cp -a "$DIR/web" "$DIR/.prev/web"
+            cp -a "$DIR/bots" "$DIR/.prev/bots" 2>/dev/null || true
+            cp -a "$DIR/drizzle" "$DIR/.prev/drizzle" 2>/dev/null || true
+            echo "نسخه‌ی قبلی در .prev نگه داشته شد"
+          fi
+
+          # جای‌گزینی کد. `data/` بیرون از این مسیرهاست، پس دیتابیس و رسیدها دست‌نخورده‌اند.
+          rm -rf "$DIR/web" "$DIR/bots" "$DIR/drizzle"
+          tar -xzf "/tmp/$PROJ-bundle.tgz" -C "$DIR"
+          rm -f "/tmp/$PROJ-bundle.tgz"
+
+          # `.env` روی رانر ساخته شده و با scp رسیده — اینجا فقط سر جایش می‌رود.
+          umask 077
+          mv "/tmp/$PROJ.env" "$DIR/.env"
+          chmod 600 "$DIR/.env"
+
+          # این `source` دو کار می‌کند و ترتیبش مهم است:
+          #   ۱) به مهاجرت DATABASE_URL و MIGRATIONS_DIR می‌دهد؛
+          #   ۲) همین متغیرها را در محیط این shell می‌گذارد، و pm2 که چند خط بعد از همین
+          #      shell اجرا می‌شود آن‌ها را به ارث می‌برد — pm2 خودش `.env` نمی‌خواند.
+          # `--update-env` پایین یعنی ری‌لود با همین محیط تازه انجام شود نه محیط قبلی.
+          # اینکه واقعاً رسیده باشد حدس نیست: چک سلامت فقط وقتی `db: up` می‌دهد که
+          # DATABASE_URL درست به پروسه رسیده باشد.
+          set -a; . "$DIR/.env"; set +a
+          # مهاجرت‌ها افزایشی‌اند (بند ۱۵-۳)، پس اپ قدیمی که چند ثانیه هم‌زمان زنده است
+          # با اسکیمای تازه مشکلی ندارد.
+          node "$DIR/bots/migrate.js"
+
+          cd "$DIR"
+
+          # **کدام اپ‌ها بالا می‌آیند، از روی واقعیت تصمیم می‌شود نه از روی عادت.**
+          # بدون توکن ربات، پروسه‌ی ربات‌ها هیچ کاری ندارد: `syncBots` هیچ pollerی پیدا
+          # نمی‌کند، و با `deposit: false` پیش‌فرض، رزروها خودکار تأیید می‌شوند پس چیزی
+          # برای منقضی کردن یا فرستادن نیست. ۱۲۵ مگابایت رمِ یک سرور مشترک برای یک
+          # پروسه‌ی بی‌کار خرج نمی‌شود.
+          APPS="$PROJ-web"
+          # تونل تنها راه ورود از اینترنت است، پس همیشه بالا می‌آید — به شرط اینکه
+          # cloudflared روی سرور باشد (بود: نسخه‌ی 2026.7.1).
+          if command -v cloudflared >/dev/null 2>&1; then
+            APPS="$APPS,$PROJ-tunnel"
+          else
+            echo "⚠️  cloudflared نیست ⇒ تونل بالا نمی‌آید و سایت از بیرون در دسترس نخواهد بود"
+          fi
+          if grep -qE '^DEMO_(TELEGRAM|BALE)_BOT_TOKEN=.+' "$DIR/.env"; then
+            APPS="$APPS,$PROJ-bots"
+            echo "توکن ربات هست ⇒ ربات‌ها هم بالا می‌آیند"
+          else
+            echo "توکن ربات نیست ⇒ ربات‌ها بالا نمی‌آیند (کاری ندارند)"
+            # اگر از دیپلوی قبلی مانده، خاموشش کن. فقط اپ خودمان — با نام صریح.
+            if pm2 jlist 2>/dev/null | grep -q "\"name\":\"$PROJ-bots\""; then
+              pm2 delete "$PROJ-bots" || true
+              echo "پروسه‌ی بی‌کار ربات‌ها حذف شد تا رم سرور را نگیرد"
+            fi
+          fi
+          echo "APPS=$APPS" > "$DIR/.deployed-apps"
+
+          # `--only` یعنی هیچ اپ محصول دیگری لمس نمی‌شود، حتی اگر ecosystem چیز دیگری داشت.
+          pm2 startOrReload ecosystem.config.cjs --only "$APPS" --update-env
+
+          # **آدرس دمو را از لاگ تونل بیرون می‌کشیم.**
+          # کلادفلر هاست‌نیم `*.trycloudflare.com` را هنگام بالا آمدن cloudflared تعیین
+          # می‌کند و فقط در همان لاگ می‌نویسد؛ هیچ API ای ندارد که بعداً بپرسیم. پس اگر
+          # اینجا برنداریمش، آدرس دمو عملاً گم است. لاگ قبلی پاک می‌شود تا آدرسِ اجرای
+          # قبلی را اشتباهی به‌عنوان آدرس فعلی برنداریم.
+          URL=""
+          case "$APPS" in
+            *"$PROJ-tunnel"*)
+              : > "$HOME/.pm2/logs/$PROJ-tunnel-out.log" 2>/dev/null || true
+              : > "$HOME/.pm2/logs/$PROJ-tunnel-error.log" 2>/dev/null || true
+              pm2 restart "$PROJ-tunnel" >/dev/null 2>&1 || true
+              URL=""
+              for i in $(seq 1 30); do
+                URL="$(grep -ohE 'https://[a-z0-9-]+\.trycloudflare\.com' \
+                       "$HOME/.pm2/logs/$PROJ-tunnel-out.log" \
+                       "$HOME/.pm2/logs/$PROJ-tunnel-error.log" 2>/dev/null | tail -1)"
+                [ -n "$URL" ] && break
+                sleep 2
+              done
+              if [ -n "$URL" ]; then
+                printf '%s\n' "$URL" > "$DIR/data/demo-url.txt"
+                echo "🔗 آدرس دمو: $URL"
+              else
+                echo "⚠️  آدرس تونل در ۶۰ ثانیه پیدا نشد. لاگ:"
+                tail -n 20 "$HOME/.pm2/logs/$PROJ-tunnel-error.log" 2>/dev/null || true
+                echo "   (دیپلوی به این خاطر قرمز نمی‌شود؛ سایت بالاست، فقط لینکش را باید از Ops → status گرفت)"
+              fi
+              ;;
+          esac
+
+          # **بدون این گام، همان لینک بالا ۴۰۴ می‌دهد.** دو کار که دیپلوی به‌تنهایی نمی‌کند:
+          #   ۱) مهاجرت جدولِ خالی می‌سازد، نه مستاجر. روی دیتابیسی که هیچ مستاجری ندارد
+          #      هر صفحه `TenantNotFoundError` می‌دهد — پس اگر خالی بود، دموی seed ساخته
+          #      می‌شود (و اگر نبود، دست نمی‌خورد؛ سرورِ یک مشتری فروخته‌شده نباید seed شود).
+          #   ۲) `classifyHost` هر هاستی که `platform.<base>` یا `<slug>.<base>` نباشد را از
+          #      مسیر `custom_domain` رد می‌کند، و هاست‌نیم تونل هیچ‌کدام نیست. تا ثبت نشود،
+          #      لینک ۴۰۴ است. و چون تونلِ quick در هر ری‌استارت هاست‌نیمِ *تازه* می‌گیرد،
+          #      این باید هر دیپلوی اجرا شود، نه یک‌بار.
+          # بعد از pm2 اجرا می‌شود چون هاست‌نیم تا بالا آمدن تونل معلوم نیست — و بی‌خطر
+          # است، چون `currentTenant` فقط per-request کش می‌شود و کش بین‌درخواستی ندارد.
+          # قرمز نمی‌کند: خطایش دمو را خراب می‌کند ولی سایتِ بالا را نباید rollback کرد —
+          # به‌جایش چک سلامت پایین‌تر واقعاً اندازه می‌گیرد که همان هاست ۴۰۴ نمی‌دهد.
+          if ! node "$DIR/bots/bootstrap-demo.js" "$URL"; then
+            echo "⚠️  bootstrap-demo شکست خورد ⇒ ممکن است لینک دمو ۴۰۴ بدهد (بخش «دمو» در چک سلامت را ببینید)"
+          fi
+          REMOTE
+
+      - name: health check, and roll back if it fails
+        id: health
+        run: |
+          ssh -i ~/.ssh/deploy_key -o BatchMode=yes "$SERVER_USER@$SERVER_HOST" \
+            "PROJ='$PROJ' WEB_PORT='$WEB_PORT' BOTS_PORT='$BOTS_PORT' bash -s" <<'REMOTE'
+          DIR="$HOME/$PROJ"
+          # فقط چیزی را چک کن که واقعاً بالا آمده. اگر توکن رباتی نبود، ربات‌ها دیپلوی
+          # نشده‌اند و انتظار جواب از پورتشان یعنی یک دیپلوی سالم را قرمز کردن.
+          . "$DIR/.deployed-apps"
+          case "$APPS" in *"$PROJ-bots"*) WANT_BOTS=yes ;; *) WANT_BOTS="" ;; esac
+          echo "اپ‌های این دیپلوی: $APPS"
+
+          ok=""
+          for i in $(seq 1 30); do
+            w="$(curl -s -m 3 "http://127.0.0.1:$WEB_PORT/api/health" 2>/dev/null || true)"
+            b=""
+            [ -n "$WANT_BOTS" ] && b="$(curl -s -m 3 "http://127.0.0.1:$BOTS_PORT/health" 2>/dev/null || true)"
+            web_ok=""; bots_ok=""
+            case "$w" in *'"ok":true'*) web_ok=yes ;; esac
+            if [ -n "$WANT_BOTS" ]; then
+              case "$b" in *'"ok":true'*) bots_ok=yes ;; esac
+            else
+              bots_ok=yes
+            fi
+            [ -n "$web_ok" ] && [ -n "$bots_ok" ] && { ok=yes; break; }
+            sleep 2
+          done
+          if [ -n "$ok" ]; then
+            echo "✅ سلامت: هرچه دیپلوی شد جواب داد"
+            echo "  web:  $w"
+            [ -n "$WANT_BOTS" ] && echo "  bots: $b" || echo "  bots: دیپلوی نشده (توکن ربات نیست)"
+            # هیچ پورتی روی اینترنت باز نمی‌شود. این را اینجا *اندازه می‌گیریم* نه فرض،
+            # چون یک بار همین اشتباه شد: hono بدون hostname به 0.0.0.0 بایند می‌کند.
+            echo "── آدرس بایند ──"
+            BAD=""
+            PORTS="$WEB_PORT"
+            [ -n "$WANT_BOTS" ] && PORTS="$PORTS $BOTS_PORT"
+            for port in $PORTS; do
+              line="$(ss -ltn 2>/dev/null | grep ":$port " || true)"
+              echo "  $line"
+              case "$line" in
+                *"127.0.0.1:$port"*) : ;;
+                *) BAD="$BAD $port" ;;
+              esac
+            done
+            if [ -n "$BAD" ]; then
+              echo "❌ این پورت‌ها روی loopback نیستند:$BAD"
+              echo "   یعنی روی اینترنت باز شده‌اند. اپ‌ها stop می‌شوند."
+              pm2 stop "$PROJ-web" "$PROJ-bots" 2>/dev/null || true
+              exit 1
+            fi
+            echo "  همه روی 127.0.0.1 ✅"
+
+            # ── دمو: خودِ لینک، نه فرضِ اینکه کار می‌کند ──
+            # این چک وجود دارد چون دقیقاً همین شکل خرابی یک بار آماده‌ی شیپ شدن بود: وب
+            # سالم، پورت درست، سلامت سبز — و لینکی که به آرایشگر داده می‌شود صفحه‌ی «این
+            # آدرس هنوز به آرایشگری متصل نیست»، چون هاست‌نیم تونل در `custom_domain` ثبت
+            # نشده بود. هدرِ Host همان کاری را می‌کند که مرورگر آرایشگر می‌کند، فقط از روی
+            # loopback — پس هیچ پورتی لازم نیست و به رسیدن تونل هم وابسته نیست.
+            #
+            # **به کد وضعیت نگاه نمی‌کنیم، و این درسِ گران‌بهایی بود:** نسخه‌ی اول همین چک
+            # `۲۰۰` بودنِ `/` را می‌سنجید و در آزمایش محلی روی یک هاستِ کاملاً ثبت‌نشده هم
+            # ۲۰۰ گرفت — چون `/` هرگز `requireTenant()` را صدا نمی‌زند و لِی‌اوت صفحه‌ی
+            # «متصل نیست» را با ۲۰۰ برمی‌گرداند. یعنی گاردی که سبز بود و هیچ‌چیز ثابت
+            # نمی‌کرد. به‌جایش `/api/health` خودش می‌گوید این هاست به کدام مستاجر رسید.
+            HOST="$(sed -e 's#^https\?://##' -e 's#/.*##' "$DIR/data/demo-url.txt" 2>/dev/null | tr -d '[:space:]')"
+            if [ -z "$HOST" ]; then
+              echo "  ⚠️  دمو: هاست‌نیم تونل ذخیره نشده، پس قابل آزمودن نیست"
+            else
+              h=""
+              for i in $(seq 1 10); do
+                h="$(curl -s -m 5 -H "Host: $HOST" "http://127.0.0.1:$WEB_PORT/api/health" 2>/dev/null || true)"
+                case "$h" in *'"tenant":"'*) break ;; esac
+                sleep 2
+              done
+              case "$h" in
+                *'"tenant":"'*)
+                  slug="$(printf '%s' "$h" | sed -n 's/.*"tenant":"\([^"]*\)".*/\1/p')"
+                  echo "  ✅ دمو: https://$HOST به مستاجر «$slug» می‌رسد"
+                  ;;
+                *)
+                  echo "❌ دمو: https://$HOST به هیچ مستاجری نمی‌رسد."
+                  echo "   جواب سلامت: $h"
+                  echo "   یعنی سایت بالاست ولی لینکی که به آرایشگر می‌دهید صفحه‌ی «این آدرس"
+                  echo "   هنوز به آرایشگری متصل نیست» را نشان می‌دهد. لاگ bootstrap-demo در"
+                  echo "   استپ قبلی را ببینید. اپ‌ها بالا و دست‌نخورده می‌مانند — این خرابیِ"
+                  echo "   داده است و برگرداندن کد درستش نمی‌کند."
+                  exit 1
+                  ;;
+              esac
+            fi
+
+            pm2 jlist 2>/dev/null | python3 -c '
+          import json, sys
+          for a in json.load(sys.stdin):
+              if a["name"].startswith("arayeshgar-"):
+                  m = a.get("monit") or {}
+                  print("  %-18s %s  %.1f MB" % (a["name"], (a.get("pm2_env") or {}).get("status"), (m.get("memory") or 0)/1048576))
+          ' || true
+            exit 0
+          fi
+
+          echo "❌ سلامت رد شد. آخرین خطاها:"
+          tail -n 40 "$HOME/.pm2/logs/$PROJ-web-error.log"  2>/dev/null || true
+          tail -n 40 "$HOME/.pm2/logs/$PROJ-bots-error.log" 2>/dev/null || true
+
+          if [ -d "$DIR/.prev/web" ]; then
+            echo "↩️  برگشت به نسخه‌ی قبلی"
+            rm -rf "$DIR/web" "$DIR/bots" "$DIR/drizzle"
+            cp -a "$DIR/.prev/web" "$DIR/web"
+            cp -a "$DIR/.prev/bots" "$DIR/bots" 2>/dev/null || true
+            cp -a "$DIR/.prev/drizzle" "$DIR/drizzle" 2>/dev/null || true
+            cd "$DIR" && pm2 startOrReload ecosystem.config.cjs --only "$APPS" --update-env
+            echo "برگشت انجام شد — سایت روی نسخه‌ی قبلی است"
+          else
+            echo "نسخه‌ی قبلی وجود ندارد (اولین دیپلوی)، پس برگشتی ممکن نیست."
+            echo "اپ‌ها stop می‌شوند تا سرور را بی‌جهت مصرف نکنند:"
+            pm2 stop "$PROJ-web" "$PROJ-bots" 2>/dev/null || true
+          fi
+          exit 1
+          REMOTE
+
+      # قاعده‌ی pm2 save: لیست بوت را فقط وقتی می‌نویسیم که *همه‌ی* اپ‌های سرور online
+      # باشند. اگر اپ کسی دیگر خوابیده باشد، save آن را برای همیشه از بوت حذف می‌کند.
+      - name: pm2 save (guarded)
+        if: success()
+        run: |
+          ssh -i ~/.ssh/deploy_key -o BatchMode=yes "$SERVER_USER@$SERVER_HOST" 'bash -s' <<'REMOTE'
+          NOT_ONLINE="$(pm2 jlist 2>/dev/null | python3 -c '
+          import json, sys
+          bad = [a["name"] for a in json.load(sys.stdin)
+                 if ((a.get("pm2_env") or {}).get("status") or "") != "online"]
+          print(" ".join(bad))
+          ' 2>/dev/null)"
+          if [ -n "$NOT_ONLINE" ]; then
+            echo "⏭️  pm2 save رد شد: این اپ‌ها online نیستند →$NOT_ONLINE"
+            echo "   ذخیره کردن الان یعنی حذف‌شان از لیست بوت. دست نمی‌زنیم."
+          else
+            pm2 save
+            echo "✅ pm2 save انجام شد (همه‌ی اپ‌ها online بودند)"
+          fi
+          REMOTE
+
+      # هشدار خرابی از خودِ گیت‌هاب می‌رود، نه از سرور — چون وقتی لازم است که ممکن است
+      # سرور خواب باشد. مقدار توکن چاپ نمی‌شود.
+      - name: alert on failure
+        if: failure()
+        env:
+          TG_TOKEN: ${{ secrets.ARAYESHGAR_DEMO_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.OWNER_TELEGRAM_ID }}
+        run: |
+          if [ -z "$TG_TOKEN" ] || [ -z "$TG_CHAT" ]; then
+            echo "⚠️  هشدار فرستاده نشد؛ سکرتِ خالی: ARAYESHGAR_DEMO_BOT_TOKEN و/یا OWNER_TELEGRAM_ID"
+            exit 0
+          fi
+          TEXT="❌ دیپلوی آرایشگر شکست خورد%0Aکامیت: ${GITHUB_SHA:0:7}%0A$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          curl -s -m 15 -o /dev/null \
+            "https://api.telegram.org/bot$TG_TOKEN/sendMessage?chat_id=$TG_CHAT&text=$TEXT" || true
+          echo "هشدار فرستاده شد"
+
+      - name: clean up the key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key

@@ -1,0 +1,166 @@
+name: Health
+
+# هر ۶ ساعت می‌پرسد «آرایشگر زنده است؟» و اگر نبود در تلگرام خبر می‌دهد.
+#
+# دو چیزی که این ورک‌فلو عمداً *نمی‌کند*:
+#   • هیچ اپی را ری‌استارت نمی‌کند. تشخیص و درمان جدا می‌مانند؛ درمان کار `Ops → restart`
+#     است که آدم آگاهانه می‌زند، نه کار یک کرونِ نیمه‌شب.
+#   • به هیچ اپ محصول دیگری دست نمی‌زند و درباره‌شان هشدار هم نمی‌دهد — آن‌ها پایشِ
+#     خودشان را دارند (`health-watch` روی همان سرور).
+#
+# سهمیه (بند ۱۴): چهار اجرا در روز، هر کدام حدود بیست ثانیه ⇒ ماهی ~۴۰ دقیقه.
+
+on:
+  schedule:
+    # دقیقه‌ی ۲۳ تا با کرون‌های سرِ ساعتِ بقیه‌ی محصولات هم‌زمان نشود.
+    - cron: "23 */6 * * *"
+  workflow_dispatch:
+
+env:
+  SERVER_HOST: 185.204.171.170
+  SERVER_USER: ubuntu
+  PROJ: arayeshgar
+  WEB_PORT: "8800"
+  BOTS_PORT: "8801"
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    steps:
+      - name: prepare ssh
+        env:
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          if [ -z "$SSH_KEY" ]; then
+            echo "❌ سکرتِ خالی: VPS_SSH_KEY"
+            exit 1
+          fi
+          umask 077
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/health_key
+          ssh-keyscan -T 15 "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: check
+        id: check
+        run: |
+          ssh -i ~/.ssh/health_key -o BatchMode=yes -o ConnectTimeout=20 \
+            "$SERVER_USER@$SERVER_HOST" \
+            "PROJ='$PROJ' WEB_PORT='$WEB_PORT' BOTS_PORT='$BOTS_PORT' bash -s" <<'REMOTE'
+          DIR="$HOME/$PROJ"
+
+          # قبل از اولین دیپلوی چیزی برای پایش نیست. سکوت، نه هشدار — وگرنه تا روز
+          # راه‌اندازی هر شش ساعت یک پیام بی‌معنی می‌رسد و بعد کسی هشدارها را جدی نمی‌گیرد.
+          if [ ! -d "$DIR" ]; then
+            echo "⬜ هنوز دیپلوی نشده ($DIR نیست) — چیزی برای بررسی نیست."
+            exit 0
+          fi
+
+          # دیپلوی می‌نویسد کدام اپ‌ها واقعاً بالا آمده‌اند. بدون توکن ربات، ربات‌ها
+          # دیپلوی نمی‌شوند — و هشدار دادن برای اپی که عمداً وجود ندارد یعنی آموزش دادن
+          # به خودتان که هشدارها را جدی نگیرید.
+          APPS="$PROJ-web,$PROJ-bots"
+          [ -f "$DIR/.deployed-apps" ] && . "$DIR/.deployed-apps"
+          echo "اپ‌های دیپلوی‌شده: $APPS"
+
+          PROBLEMS=""
+          note() { echo "  $1"; }
+          bad()  { echo "  ❌ $1"; PROBLEMS="$PROBLEMS
+          - $1"; }
+
+          echo "── pm2 ──"
+          for app in $(printf '%s' "$APPS" | tr ',' ' '); do
+            ST="$(pm2 jlist 2>/dev/null | PM2_APP="$app" python3 -c '
+          import json, os, sys
+          want = os.environ["PM2_APP"]
+          try:
+              apps = json.load(sys.stdin)
+          except Exception:
+              print("unreadable"); raise SystemExit(0)
+          for a in apps:
+              if a.get("name") == want:
+                  e = a.get("pm2_env") or {}
+                  print("%s %s" % (e.get("status") or "?", e.get("restart_time") or 0))
+                  raise SystemExit(0)
+          print("missing")
+          ')"
+            case "$ST" in
+              missing)    bad "اپ «$app» در pm2 نیست" ;;
+              unreadable) bad "خروجی pm2 خوانده نشد" ;;
+              online*)    note "«$app»: online (ری‌استارت: ${ST#online })" ;;
+              *)          bad "اپ «$app» وضعیتش «${ST%% *}» است، نه online" ;;
+            esac
+          done
+
+          case "$APPS" in *"$PROJ-bots"*) HAS_BOTS=yes ;; *) HAS_BOTS="" ;; esac
+
+          echo "── endpoint ──"
+          W="$(curl -s -m 5 "http://127.0.0.1:$WEB_PORT/api/health" 2>/dev/null || true)"
+          case "$W" in *'"ok":true'*) note "web: ok" ;; *) bad "وب جواب سلامت نداد: ${W:-(خالی)}" ;; esac
+          if [ -n "$HAS_BOTS" ]; then
+            B="$(curl -s -m 5 "http://127.0.0.1:$BOTS_PORT/health" 2>/dev/null || true)"
+            case "$B" in *'"ok":true'*) note "bots: ok" ;; *) bad "ربات‌ها جواب سلامت ندادند: ${B:-(خالی)}" ;; esac
+          else
+            note "bots: دیپلوی نشده — بررسی نمی‌شود"
+          fi
+
+          # همان قاعده‌ی «هیچ پورتی عمومی نیست» — یک بار نقض شد، پس اندازه‌گیری می‌شود.
+          echo "── آدرس بایند ──"
+          PORTS="$WEB_PORT"
+          [ -n "$HAS_BOTS" ] && PORTS="$PORTS $BOTS_PORT"
+          for port in $PORTS; do
+            L="$(ss -ltn 2>/dev/null | grep ":$port " || true)"
+            case "$L" in
+              *"127.0.0.1:$port"*) note "پورت $port روی loopback" ;;
+              "")                  bad "پورت $port اصلاً گوش نمی‌دهد" ;;
+              *)                   bad "پورت $port روی loopback نیست — روی اینترنت باز است!" ;;
+            esac
+          done
+
+          echo "── جا ──"
+          df -h / | tail -1
+          AVAIL_MB="$(df -m / | tail -1 | awk '{print $4}')"
+          [ "$AVAIL_MB" -gt 512 ] || bad "دیسک آزاد کمتر از ۵۱۲ مگابایت است"
+          free -m | sed -n '2p;3p'
+          MEM_AVAIL="$(free -m | awk '/^Mem:/{print $7}')"
+          [ "$MEM_AVAIL" -gt 80 ] || bad "حافظه‌ی آزاد فقط ${MEM_AVAIL} مگابایت است"
+
+          # دیتابیس: فقط اینکه هست و خوانده می‌شود. کوئری سنگین نمی‌زنیم.
+          echo "── دیتابیس ──"
+          if [ -f "$DIR/data/$PROJ.db" ]; then
+            DB_PATH="$DIR/data/$PROJ.db" python3 -c '
+          import os, sqlite3
+          con = sqlite3.connect("file:%s?mode=ro" % os.environ["DB_PATH"], uri=True, timeout=5)
+          n = con.execute("select count(*) from tenants").fetchone()[0]
+          print("  مستاجرها: %d" % n)
+          ' || bad "دیتابیس خوانده نشد"
+          else
+            bad "فایل دیتابیس نیست"
+          fi
+
+          if [ -n "$PROBLEMS" ]; then
+            echo
+            echo "PROBLEMS_START$PROBLEMS"
+            exit 1
+          fi
+          echo
+          echo "✅ همه‌چیز سلامت است"
+          REMOTE
+
+      - name: alert
+        if: failure()
+        env:
+          TG_TOKEN: ${{ secrets.ARAYESHGAR_DEMO_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.OWNER_TELEGRAM_ID }}
+        run: |
+          if [ -z "$TG_TOKEN" ] || [ -z "$TG_CHAT" ]; then
+            echo "⚠️  هشدار فرستاده نشد؛ سکرتِ خالی: ARAYESHGAR_DEMO_BOT_TOKEN و/یا OWNER_TELEGRAM_ID"
+            exit 0
+          fi
+          TEXT="⚠️ پایش آرایشگر مشکل دید%0A$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID%0A%0Aجزئیات در لاگ همان اجراست."
+          curl -s -m 15 -o /dev/null \
+            "https://api.telegram.org/bot$TG_TOKEN/sendMessage?chat_id=$TG_CHAT&text=$TEXT" || true
+          echo "هشدار فرستاده شد"
+
+      - name: clean up the key
+        if: always()
+        run: rm -f ~/.ssh/health_key

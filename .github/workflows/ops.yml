@@ -141,6 +141,23 @@ jobs:
                 echo "cloudflared: $(cloudflared --version 2>/dev/null || echo 'نصب نیست')"
                 echo "python3: $(python3 --version 2>/dev/null || echo '-')"
                 echo
+                echo "── لینک دمو ──"
+                # آدرس quick tunnel با هر ری‌استارت cloudflared عوض می‌شود، پس همیشه از
+                # لاگِ زنده خوانده می‌شود نه از فایلی که ممکن است کهنه باشد.
+                LIVE="$(grep -ohE 'https://[a-z0-9-]+\.trycloudflare\.com' \
+                        "$HOME/.pm2/logs/$PROJ-tunnel-out.log" \
+                        "$HOME/.pm2/logs/$PROJ-tunnel-error.log" 2>/dev/null | tail -1)"
+                SAVED="$(cat "$DIR/data/demo-url.txt" 2>/dev/null)"
+                if [ -n "$LIVE" ]; then
+                  echo "🔗 $LIVE"
+                  [ -n "$SAVED" ] && [ "$SAVED" != "$LIVE" ] \
+                    && echo "   (آدرسِ ذخیره‌شده کهنه است — تونل از دیپلوی تا حالا ری‌استارت شده)"
+                elif [ -n "$SAVED" ]; then
+                  echo "🔗 $SAVED  ← ذخیره‌شده؛ تونل الان بالا نیست پس ممکن است کار نکند"
+                else
+                  echo "⬜ لینکی نیست (تونل هنوز بالا نیامده)"
+                fi
+                echo
                 echo "── پروژه ──"
                 if [ -d "$DIR" ]; then
                   echo "پوشه: ✅ $DIR"
@@ -214,8 +231,17 @@ jobs:
                 # فقط اپ‌های این پروژه — نام هرگز از ورودی نمی‌آید
                 pm2 restart "$APP_WEB" --update-env 2>/dev/null || echo "$APP_WEB بالا نبود"
                 pm2 restart "$APP_BOTS" --update-env 2>/dev/null || echo "$APP_BOTS بالا نبود"
+                # تونل عمداً ری‌استارت *نمی‌شود*: هر ری‌استارتش آدرس دمو را عوض می‌کند، و
+                # کسی که «ری‌استارت» می‌زند معمولاً دنبال مرگِ لینکش نیست.
+                echo "(تونل دست‌نخورده ماند تا لینک دمو عوض نشود — برای ری‌استارتش از پنل pm2 استفاده کنید)"
                 sleep 3
                 pm2 ls
+                echo
+                echo "لینک دمو بعد از ری‌استارت:"
+                grep -ohE 'https://[a-z0-9-]+\.trycloudflare\.com' \
+                  "$HOME/.pm2/logs/$PROJ-tunnel-out.log" \
+                  "$HOME/.pm2/logs/$PROJ-tunnel-error.log" 2>/dev/null | tail -1 \
+                  || echo "(پیدا نشد)"
                 ;;
 
               env-check)

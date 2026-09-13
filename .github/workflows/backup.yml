@@ -1,0 +1,170 @@
+name: Backup
+
+# بکاپ شبانه‌ی دیتابیس و رسیدها، به‌عنوان artifact گیت‌هاب.
+#
+# **کپی ساده‌ی فایل `.db` بکاپ نیست.** WAL روشن است، پس بخشی از تازه‌ترین داده در
+# `-wal` است و یک `cp` وسط یک تراکنش فایلی نیم‌بند می‌دهد که هنگام بازگردانی معلوم
+# می‌شود. پس از API خودِ SQLite (`Connection.backup`) استفاده می‌شود که آنلاین و
+# تراکنش‌آگاه است و اپ را قفل نمی‌کند.
+#
+# و بکاپی که باز نشده باشد بکاپ نیست: قبل از ارسال، اسنپ‌شات باز و شمرده می‌شود.
+
+on:
+  schedule:
+    - cron: "41 2 * * *"
+  workflow_dispatch:
+
+env:
+  SERVER_HOST: 185.204.171.170
+  SERVER_USER: ubuntu
+  PROJ: arayeshgar
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: prepare ssh
+        env:
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          if [ -z "$SSH_KEY" ]; then
+            echo "❌ سکرتِ خالی: VPS_SSH_KEY"
+            exit 1
+          fi
+          umask 077
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/backup_key
+          ssh-keyscan -T 15 "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: snapshot on the server
+        id: snap
+        run: |
+          ssh -i ~/.ssh/backup_key -o BatchMode=yes "$SERVER_USER@$SERVER_HOST" \
+            "PROJ='$PROJ' bash -s" <<'REMOTE'
+          set -e
+          DIR="$HOME/$PROJ"
+          DB="$DIR/data/$PROJ.db"
+          OUT="/tmp/$PROJ-backup"
+          rm -rf "$OUT"; mkdir -p "$OUT"
+
+          if [ ! -f "$DB" ]; then
+            echo "⬜ دیتابیسی نیست ($DB) — هنوز دیپلوی نشده. چیزی برای بکاپ نداریم."
+            echo "NOTHING_TO_BACKUP"
+            exit 0
+          fi
+
+          # اسنپ‌شات آنلاین. اپ می‌تواند هم‌زمان بنویسد؛ خروجی یک دیتابیس منسجم است.
+          DB_PATH="$DB" OUT_PATH="$OUT/db.sqlite" python3 - <<'PY'
+          import os, sqlite3
+          src = sqlite3.connect("file:%s?mode=ro" % os.environ["DB_PATH"], uri=True, timeout=30)
+          dst = sqlite3.connect(os.environ["OUT_PATH"])
+          with dst:
+              src.backup(dst)
+          dst.close(); src.close()
+          print("  اسنپ‌شات گرفته شد")
+          PY
+
+          # بکاپی که باز نشده باشد بکاپ نیست — همین‌جا، روی خودِ اسنپ‌شات، نه روی اصل.
+          OUT_PATH="$OUT/db.sqlite" python3 - <<'PY'
+          import os, sqlite3
+          con = sqlite3.connect("file:%s?mode=ro" % os.environ["OUT_PATH"], uri=True)
+          if con.execute("pragma integrity_check").fetchone()[0] != "ok":
+              raise SystemExit("❌ integrity_check روی اسنپ‌شات رد شد")
+          tables = con.execute("select count(*) from sqlite_master where type='table'").fetchone()[0]
+          tenants = con.execute("select count(*) from tenants").fetchone()[0]
+          bookings = con.execute("select count(*) from bookings").fetchone()[0]
+          print("  بررسی شد: %d جدول · %d مستاجر · %d رزرو" % (tables, tenants, bookings))
+          PY
+
+          # باز کردن اسنپ‌شات برای همان بررسی، کنارش `-wal` و `-shm` می‌سازد. اگر بمانند
+          # با `scp` همراه بکاپ دانلود می‌شوند و آشغالِ گمراه‌کننده‌اند؛ محتوایی ندارند.
+          rm -f "$OUT/db.sqlite-wal" "$OUT/db.sqlite-shm"
+          gzip -9 "$OUT/db.sqlite"
+
+          # رسیدها دیتای مشتری‌اند و همراه دیتابیس نمی‌آیند، پس جدا فشرده می‌شوند.
+          if [ -d "$DIR/data/uploads" ]; then
+            tar -czf "$OUT/uploads.tgz" -C "$DIR/data" uploads
+            echo "  آپلودها: $(du -sh "$OUT/uploads.tgz" | cut -f1)"
+          else
+            echo "  آپلودی نیست"
+          fi
+          ls -lh "$OUT"
+          REMOTE
+
+      - name: fetch it
+        id: fetch
+        run: |
+          mkdir -p backup
+          if ssh -i ~/.ssh/backup_key -o BatchMode=yes "$SERVER_USER@$SERVER_HOST" \
+               "test -f /tmp/$PROJ-backup/db.sqlite.gz"; then
+            scp -i ~/.ssh/backup_key -o BatchMode=yes \
+              "$SERVER_USER@$SERVER_HOST:/tmp/$PROJ-backup/*" backup/
+            ssh -i ~/.ssh/backup_key -o BatchMode=yes "$SERVER_USER@$SERVER_HOST" \
+              "rm -rf /tmp/$PROJ-backup"
+            echo "have_backup=yes" >> "$GITHUB_OUTPUT"
+            ls -lh backup/
+          else
+            echo "have_backup=no" >> "$GITHUB_OUTPUT"
+            echo "⬜ چیزی برای گرفتن نبود."
+          fi
+
+      # بررسی دوم، این بار روی رانر و روی همان فایلی که آرشیو می‌شود — چون چیزی که
+      # دانلود می‌کنید همین است، نه آن که روی سرور بود.
+      - name: verify what we are about to archive
+        if: steps.fetch.outputs.have_backup == 'yes'
+        run: |
+          gunzip -c backup/db.sqlite.gz > /tmp/restored.sqlite
+          python3 - <<'PY'
+          import sqlite3
+          con = sqlite3.connect("file:/tmp/restored.sqlite?mode=ro", uri=True)
+          assert con.execute("pragma integrity_check").fetchone()[0] == "ok", "integrity_check رد شد"
+          t = con.execute("select count(*) from sqlite_master where type='table'").fetchone()[0]
+          print("✅ بکاپِ دانلودشده باز شد: %d جدول" % t)
+          PY
+          rm -f /tmp/restored.sqlite
+
+      - name: encrypt (only if a passphrase is set)
+        if: steps.fetch.outputs.have_backup == 'yes'
+        env:
+          PASS: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          if [ -z "$PASS" ]; then
+            echo "⚠️  سکرتِ خالی (اختیاری): BACKUP_PASSPHRASE — بکاپ رمزنگاری‌نشده آرشیو می‌شود."
+            echo "   artifactها خصوصی‌اند، ولی شماره موبایل و عکس رسید بانکی داخلشان است."
+            exit 0
+          fi
+          for f in backup/*; do
+            # -pbkdf2 و iter بالا، چون رمزِ آدمیزاد کم‌آنتروپی است.
+            openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
+              -in "$f" -out "$f.enc" -pass env:PASS
+            rm -f "$f"
+          done
+          echo "✅ رمزنگاری شد"
+          ls -lh backup/
+
+      - uses: actions/upload-artifact@v4
+        if: steps.fetch.outputs.have_backup == 'yes'
+        with:
+          name: arayeshgar-backup
+          path: backup/
+          # ۳۰ روز؛ بیشتر از این سهمیه‌ی ذخیره‌سازی را بی‌دلیل می‌خورد.
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: alert on failure
+        if: failure()
+        env:
+          TG_TOKEN: ${{ secrets.ARAYESHGAR_DEMO_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.OWNER_TELEGRAM_ID }}
+        run: |
+          if [ -z "$TG_TOKEN" ] || [ -z "$TG_CHAT" ]; then
+            echo "⚠️  هشدار فرستاده نشد؛ سکرتِ خالی: ARAYESHGAR_DEMO_BOT_TOKEN و/یا OWNER_TELEGRAM_ID"
+            exit 0
+          fi
+          TEXT="❌ بکاپ شبانه‌ی آرایشگر شکست خورد%0A$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          curl -s -m 15 -o /dev/null \
+            "https://api.telegram.org/bot$TG_TOKEN/sendMessage?chat_id=$TG_CHAT&text=$TEXT" || true
+
+      - name: clean up the key
+        if: always()
+        run: rm -f ~/.ssh/backup_key

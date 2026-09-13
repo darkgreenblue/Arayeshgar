@@ -34,6 +34,9 @@ const EXTERNAL = ["@libsql/client", "libsql"];
 const ENTRIES = {
   "dist/index.js": "src/index.ts",
   "dist/migrate.js": "../../packages/db/src/migrate-cli.ts",
+  // Seeds the demo tenant on an empty database and points the tunnel's hostname at it.
+  // Runs on every deploy because a quick tunnel's hostname changes on every restart.
+  "dist/bootstrap-demo.js": "src/bootstrap-demo.ts",
 };
 
 const results = [];

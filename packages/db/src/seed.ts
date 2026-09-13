@@ -136,13 +136,3 @@ export async function seed(url?: string) {
 
   console.error("[seed] demo tenant created (slug=demo, admin/admin1234)");
 }
-
-const isMain = process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/^.*\//, ""));
-if (isMain) {
-  seed()
-    .then(() => process.exit(0))
-    .catch((err) => {
-      console.error("[seed] failed", err);
-      process.exit(1);
-    });
-}
