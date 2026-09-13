@@ -39,7 +39,13 @@ module.exports = {
   apps: [
     {
       name: "arayeshgar-web",
-      script: "web/server.js",
+      // **Not `web/server.js`.** `next build --output standalone` on a monorepo writes a
+      // tree that mirrors the workspace, so the entry sits at `apps/web/server.js` *inside*
+      // it, next to a `node_modules` full of traced deps whose paths are relative to that
+      // tree's own root. `tools/stage-bundle.sh` therefore copies it whole and unmodified —
+      // hoisting the entry up a level would break every one of those resolutions. Ugly
+      // path, but it is the one that exists: verified against the real build output.
+      script: "web/apps/web/server.js",
       cwd: ".",
       env: { PORT: "8800", HOSTNAME: "127.0.0.1" },
       // One process: SQLite has a single writer, so a second instance would only queue
@@ -65,6 +71,36 @@ module.exports = {
       max_memory_restart: "200M",
       autorestart: true,
       // The worker drains the outbox every 30s, so a crash loop would hammer Telegram.
+      restart_delay: 5000,
+    },
+    {
+      // The only way in from the internet. Nothing here opens a port: cloudflared makes an
+      // outbound connection to Cloudflare's edge and forwards requests back to loopback.
+      //
+      // **This is a quick tunnel, not a named one, and that is a deliberate downgrade.**
+      // A named tunnel needs a domain sitting in a Cloudflare zone, and the free-domain
+      // route fell over: DigitalPlat now asks for registry and billing details the owner
+      // does not have. A quick tunnel needs no domain, no Cloudflare account, and no card —
+      // which also sidesteps signing up to Cloudflare from Iran. The cost is that Cloudflare
+      // assigns the `*.trycloudflare.com` hostname during startup, so **the URL changes
+      // every time this process restarts**; the deploy captures it into
+      // `data/demo-url.txt` and `Ops → status` prints it, so the current link is always
+      // findable rather than guessed. Cloudflare caps quick tunnels at 200 concurrent
+      // requests and documents them as test-only, which is fine for showing one barber a
+      // demo and is not fine for a paying customer — that is when a `.ir` domain and a
+      // named tunnel replace this.
+      name: "arayeshgar-tunnel",
+      script: "cloudflared",
+      // `--no-autoupdate`: a self-update would restart the process, and every restart of
+      // this process silently changes the demo URL.
+      args: "tunnel --no-autoupdate --url http://127.0.0.1:8800",
+      cwd: ".",
+      instances: 1,
+      exec_mode: "fork",
+      interpreter: "none", // a Go binary, not a Node script
+      // Measured ~30 MB in practice; 120M is a leak guard, not an allocation.
+      max_memory_restart: "120M",
+      autorestart: true,
       restart_delay: 5000,
     },
   ],

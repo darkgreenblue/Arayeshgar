@@ -18,7 +18,7 @@
     "typecheck": "tsc --noEmit",
     "generate": "drizzle-kit generate",
     "migrate": "tsx src/migrate-cli.ts",
-    "seed": "tsx src/seed.ts",
+    "seed": "tsx src/seed-cli.ts",
     "test": "echo 'no tests in @arayeshgar/db'"
   },
   "dependencies": {
