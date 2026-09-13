@@ -500,10 +500,34 @@ jobs:
             echo "⚠️  هشدار فرستاده نشد؛ سکرتِ خالی: ARAYESHGAR_DEMO_BOT_TOKEN و/یا OWNER_TELEGRAM_ID"
             exit 0
           fi
-          TEXT="❌ دیپلوی آرایشگر شکست خورد%0Aکامیت: ${GITHUB_SHA:0:7}%0A$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-          curl -s -m 15 -o /dev/null \
-            "https://api.telegram.org/bot$TG_TOKEN/sendMessage?chat_id=$TG_CHAT&text=$TEXT" || true
-          echo "هشدار فرستاده شد"
+          # ‏`printf` با \n، نه رشته‌ی چندخطیِ واقعی: خطِ ادامه‌ای که در ستون صفر شروع شود
+          # از indent بلوکِ YAML پایین‌تر است و بلوک را همان‌جا می‌بندد (همین یک بار شد).
+          TEXT="$(printf '❌ دیپلوی آرایشگر شکست خورد\nکامیت: %s\n%s' \
+                  "${GITHUB_SHA:0:7}" \
+                  "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID")"
+          # **قبلاً اینجا `-o /dev/null || true` بود و بی‌قید و شرط «فرستاده شد» چاپ می‌کرد.**
+          # اولین هشدار واقعی هرگز به مالک نرسید و این استپ سبز گفت رفته — چهارمین گاردی
+          # در این پروژه که فقط می‌توانست سبز باشد. حالا جوابِ خودِ تلگرام خوانده می‌شود.
+          # `--data-urlencode` هم جای %0A دستی: متن چندخطی و فارسی را خودش درست انکود می‌کند.
+          RESP="$(curl -s -m 20 -G "https://api.telegram.org/bot$TG_TOKEN/sendMessage" \
+                  --data-urlencode "chat_id=$TG_CHAT" \
+                  --data-urlencode "text=$TEXT" 2>/dev/null || true)"
+          printf '%s' "$RESP" | python3 -c '
+          import json, sys
+          try:
+              d = json.load(sys.stdin)
+          except Exception:
+              print("⚠️  هشدار: جواب تلگرام خوانده نشد"); raise SystemExit(0)
+          if d.get("ok"):
+              print("✅ هشدار تلگرامی رسید"); raise SystemExit(0)
+          desc = d.get("description") or ""
+          print("⚠️  هشدار تلگرامی *نرفت* — %s: %s" % (d.get("error_code"), desc))
+          if "initiate" in desc.lower():
+              print("   ⇒ ربات را یک بار در تلگرام Start کنید؛ ربات نمی‌تواند اول پیام بدهد.")
+          elif "chat not found" in desc.lower():
+              print("   ⇒ OWNER_TELEGRAM_ID آی‌دی عددی درستی نیست.")
+          print("   برای تشخیص کامل: Ops → bot-check")
+          ' || true
 
       - name: clean up the key
         if: always()
