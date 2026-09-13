@@ -44,3 +44,20 @@ export function formatCardNumber(card: string, persianDigits = true): string {
 export function formatToman(amount: number): string {
   return `${toPersianDigits(new Intl.NumberFormat("en-US").format(amount).replace(/,/g, "٬"))} تومان`;
 }
+
+/**
+ * Wrap a Latin run so it keeps its place inside Persian text.
+ *
+ * Booking codes are six Latin letters, and in an RTL sentence the neutral characters around
+ * them (`:` and spaces) take the paragraph's direction, so `کد رزرو: PKFNDU` renders with the
+ * colon on the wrong side of the code. Cosmetic rather than unreadable — but this string is
+ * the one the customer keeps and re-reads, so it is worth getting right.
+ *
+ * U+2068 FIRST STRONG ISOLATE / U+2069 POP DIRECTIONAL ISOLATE, which is what `<bdi>` does in
+ * HTML. Used here rather than markup because these strings go to Telegram, which has no
+ * `<bdi>` — the Unicode characters are the only mechanism available in a chat message.
+ * On the web, prefer `<bdi>`.
+ */
+export function isolate(text: string): string {
+  return `⁨${text}⁩`;
+}
