@@ -36,7 +36,18 @@ export async function getBot(
   const hit = cache.get(k);
   if (hit && hit.token === token) return hit.bot;
 
-  const bot = new Bot<BotCtx>(token, { client: { apiRoot: apiRootFor(platform) } });
+  // `timeoutSeconds` is load-bearing, not tuning: grammY defaults to 500s (its own doc
+  // calls this out as the thing that "may effectively make your bot freeze" on a network
+  // stall), and `withRetry` below cannot shorten that itself -- `bot.init()` takes no
+  // AbortSignal, so the timer `withRetry` sets never actually touches the pending request.
+  // Measured on the real server: one tenant's bot.init() hung for the full ~1000s of two
+  // back-to-back 500s grammY timeouts before syncBots() ever logged anything, during a
+  // multi-minute stall on this VPS's outbound network (the same window the cloudflared
+  // tunnel logged "no recent network activity" and reconnected). A short timeout here
+  // turns that into a fast, visible retry instead of a silent multi-tenant freeze.
+  const bot = new Bot<BotCtx>(token, {
+    client: { apiRoot: apiRootFor(platform), timeoutSeconds: 15 },
+  });
   bot.api.config.use(autoRetry({ maxRetryAttempts: 2, maxDelaySeconds: 5 }));
   bot.use(async (ctx, next) => {
     ctx.tenant = tenant;
