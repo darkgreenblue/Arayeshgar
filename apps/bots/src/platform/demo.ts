@@ -99,7 +99,13 @@ export async function getSharedDemoBot(
   const hit = shared.get(platform);
   if (hit && hit.token === token) return hit.bot;
 
-  const bot = new Bot<BotCtx>(token, { client: { apiRoot: apiRootFor(platform) } });
+  // See the matching comment in platform/bot.ts: grammY defaults to a 500s timeout, and
+  // withRetry below cannot shorten it because bot.init() never receives its AbortSignal.
+  // This is the one bot every prospect's demo depends on, so a fast, visible failure here
+  // matters even more than for a single tenant's own bot.
+  const bot = new Bot<BotCtx>(token, {
+    client: { apiRoot: apiRootFor(platform), timeoutSeconds: 15 },
+  });
   bot.api.config.use(autoRetry({ maxRetryAttempts: 2, maxDelaySeconds: 5 }));
   bot.use(async (ctx, next) => {
     const userId = String(ctx.from?.id ?? "");
