@@ -25,6 +25,7 @@ on:
             admin-add,
             admin-remove,
             bot-check,
+            node-net-check,
           ]
         required: true
       lines:
@@ -488,6 +489,94 @@ jobs:
             print()
             print("  ✅ = این ردیف رسید می‌گیرد. اگر هیچ ✅ نیست، رزروِ دمو به هیچ تلگرامی نمی‌رود.")
             PY
+                ;;
+
+              node-net-check)
+                # چرا این اکشن وجود دارد. بعد از رفع باگ هنگ‌کردن بی‌نهایتِ syncBots
+                # (چک‌پوینت‌های PR قبلی)، الان معلوم شد bot.init() هر بار دقیقاً بعد
+                # از ۱۵ ثانیه با «Aborted delay» شکست می‌خورد -- هر ۱۰ دقیقه، بیش از
+                # سه ساعت پشت سر هم، صد در صد. در همان لحظه curl از همین سرور به
+                # همان هاست در کمتر از ۲۰۰ میلی‌ثانیه جواب می‌گیرد. یعنی مشکل نه در
+                # حلقه‌ی retry است (آن رفع شد) و نه لزوماً در خودِ شبکه -- چیزی
+                # مخصوصِ پشته‌ی HTTPS نود، جدا از curl. این اکشن دقیقاً همان چیزی که
+                # grammY می‌سازد (https.Agent با keepAlive) را با یک درخواست خام و
+                # بدون agent و با fetch بومی نود مقایسه می‌کند تا معلوم شود مشکل کجاست:
+                # DNS، اجنت، یا کلِ پشته‌ی HTTPS نود -- بدون نیاز به توکن ربات.
+                node - <<'JS' 2>&1
+            const https = require("https");
+            const dns = require("dns");
+            const { performance } = require("perf_hooks");
+
+            dns.setDefaultResultOrder("ipv4first");
+
+            function resolve(family) {
+              return new Promise((done) => {
+                const t0 = performance.now();
+                dns.lookup("api.telegram.org", { family }, (err, address) => {
+                  const ms = Math.round(performance.now() - t0);
+                  if (err) done(`family ${family}: FAIL after ${ms}ms (${err.code || err.message})`);
+                  else done(`family ${family}: ${address} in ${ms}ms`);
+                });
+              });
+            }
+
+            function plainRequest(useAgent) {
+              return new Promise((done) => {
+                const t0 = performance.now();
+                const options = { hostname: "api.telegram.org", path: "/", method: "GET", timeout: 15000 };
+                if (useAgent) options.agent = new https.Agent({ keepAlive: true });
+                const req = https.request(options, (res) => {
+                  res.resume();
+                  res.on("end", () => {
+                    const ms = Math.round(performance.now() - t0);
+                    done(`agent=${useAgent}: status ${res.statusCode} in ${ms}ms`);
+                  });
+                });
+                req.on("timeout", () => req.destroy(new Error("manual timeout")));
+                req.on("error", (err) => {
+                  const ms = Math.round(performance.now() - t0);
+                  done(`agent=${useAgent}: FAIL after ${ms}ms (${err.code || err.message})`);
+                });
+                req.end();
+              });
+            }
+
+            function nativeFetch() {
+              const t0 = performance.now();
+              const controller = new AbortController();
+              const timer = setTimeout(() => controller.abort(), 15000);
+              return fetch("https://api.telegram.org/", { signal: controller.signal })
+                .then((res) => {
+                  clearTimeout(timer);
+                  const ms = Math.round(performance.now() - t0);
+                  return `native fetch: status ${res.status} in ${ms}ms`;
+                })
+                .catch((err) => {
+                  clearTimeout(timer);
+                  const ms = Math.round(performance.now() - t0);
+                  return `native fetch: FAIL after ${ms}ms (${err.message})`;
+                });
+            }
+
+            async function main() {
+              console.log("node version:", process.version);
+              console.log("");
+              console.log("dns lookup:");
+              console.log("  " + (await resolve(4)));
+              console.log("  " + (await resolve(6)));
+              console.log("");
+              console.log("https.request without a custom agent (default, no keepAlive):");
+              console.log("  " + (await plainRequest(false)));
+              console.log("");
+              console.log("https.request with https.Agent keepAlive true (this is what grammy uses):");
+              console.log("  " + (await plainRequest(true)));
+              console.log("");
+              console.log("native fetch (undici, separate from grammy bundled node-fetch dependency):");
+              console.log("  " + (await nativeFetch()));
+            }
+
+            main();
+            JS
                 ;;
 
             esac
