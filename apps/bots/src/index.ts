@@ -5,6 +5,7 @@
  *  - on boot (and every 10 minutes) it makes sure every active tenant's webhook is registered
  */
 import dns from "node:dns";
+import { execFileSync } from "node:child_process";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { sql } from "drizzle-orm";
@@ -108,6 +109,32 @@ export async function syncBots(): Promise<{ ok: number; failed: number }> {
   // Checkpoint (same reasoning as above): bisecting further in case the per-tenant loop
   // itself is where things stall, not just the initial DB read.
   logger.info({}, "syncBots: per-tenant loop done, entering shared-demo-bot loop");
+  // TEMPORARY diagnostic, to be removed once this is resolved. Every ad-hoc test run over
+  // SSH -- curl, plain Node https, Node https with the exact keepAlive agent grammY builds,
+  // even a POST matching grammY's exact method/headers/body -- succeeds in well under a
+  // second. The live arayeshgar-bots process itself, across multiple fresh restarts, has
+  // failed bot.init() 100% of the time. The one thing no test so far has controlled for is
+  // the process context itself: this runs inside the actual pm2/systemd-managed process, at
+  // the actual moment syncBots() runs, using a curl *subprocess* rather than Node's own
+  // network stack. If this succeeds where grammY's call fails moments later, the problem is
+  // isolated to Node's own networking in this process; if this also fails, it is something
+  // about the process/cgroup context itself, not Node specifically. The token reaches curl
+  // only via a subprocess environment variable, never as a literal argument another user on
+  // this shared server could see with `ps`.
+  try {
+    const t0 = Date.now();
+    const out = execFileSync(
+      "bash",
+      [
+        "-c",
+        'curl -s -m 12 -o /dev/null -w "%{http_code} %{time_total}s" "https://api.telegram.org/bot$CURL_DIAG_TOKEN/getMe"',
+      ],
+      { env: { ...process.env, CURL_DIAG_TOKEN: demoTokenFor("telegram") ?? "" }, timeout: 15000 },
+    ).toString();
+    logger.info({ out, ms: Date.now() - t0 }, "syncBots: same-process curl subprocess diagnostic");
+  } catch (err) {
+    logger.error({ err: String(err) }, "syncBots: same-process curl subprocess diagnostic failed");
+  }
   for (const platform of ["telegram", "bale"] as const) {
     if (!demoTokenFor(platform)) {
       // Silent here once meant nobody could tell "no demo bot configured for this

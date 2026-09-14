@@ -318,6 +318,16 @@ jobs:
                     echo "  $k: ❌ در محیط واقعیِ پروسه نیست"
                   fi
                 done
+                echo
+                # چرا این بخش اضافه شد. هر تست دستیِ getMe از یک شل SSH تعاملی -- با
+                # همین توکن، همین هدرها، همین agent -- فوری موفق بود، ولی خودِ پروسه‌ی
+                # زنده‌ی arayeshgar-bots هر بار شکست می‌خورد. این سرور مشترک چند پروژه‌ی
+                # دیگر هم دارد (tarot، kartbekart، ...)؛ اگر یکی از آن‌ها یک متغیر پراکسی
+                # سراسری گذاشته باشد که فقط پروسه‌های مدیریت‌شده با pm2/systemd آن را به
+                # ارث می‌برند (نه یک شل تعاملیِ SSH که پروفایل جدا دارد)، فقط از همینجا
+                # قابل دیدن است -- نه از هیچ شل تعاملی. فقط نامِ متغیرها چاپ می‌شود.
+                echo "نامِ همه‌ی متغیرهای محیطیِ پروسه‌ی زنده (فقط نام، هرگز مقدار):"
+                tr '\0' '\n' < "/proc/$PID/environ" | cut -d= -f1 | sort
                 ;;
 
               db-query)
@@ -418,6 +428,7 @@ jobs:
                 echo
                 echo "── ربات کیست؟ (getMe) ──"
                 TG="https://api.telegram.org/bot$DEMO_TELEGRAM_BOT_TOKEN"
+                T0=$(date +%s%3N)
                 curl -s -m 20 "$TG/getMe" | python3 -c '
             import json, sys
             try:
@@ -432,6 +443,58 @@ jobs:
             print("  ✅ @%s  (نام: %s · id: %s)" % (r.get("username"), r.get("first_name"), r.get("id")))
             print("  لینک ربات: https://t.me/%s" % r.get("username"))
             '
+                T1=$(date +%s%3N)
+                echo "  (curl گرفت در $((T1 - T0)) میلی‌ثانیه)"
+                echo
+                # چرا این بخش وجود دارد. یک بار این چک با GET ساده نوشته شد و در کنارِ
+                # curl موفق بود -- ولی خودِ bot.init() هنوز هر بار شکست می‌خورد. تفاوت
+                # پیدا شد: grammY هرگز GET نمی‌زند؛ createJsonPayload در payload.js همیشه
+                # POST با body=`{}`، هدر content-type: application/json، و
+                # connection: keep-alive می‌سازد. این نسخه دقیقاً همان درخواست (متد،
+                # هدرها، بدنه) را با https خامِ نود می‌سازد تا معلوم شود فرق GET/POST
+                # همان جای گیر است یا نه. توکن هرگز چاپ نمی‌شود؛ فقط از env به نود می‌رود.
+                echo "── همان درخواست، این‌بار POST دقیقاً مثل grammY (نه GET) ──"
+                TG_URL="$TG/getMe" node - <<'JS' 2>&1
+            const https = require("https");
+            const { performance } = require("perf_hooks");
+            const url = new URL(process.env.TG_URL);
+            const body = "{}";
+            const t0 = performance.now();
+            const agent = new https.Agent({ keepAlive: true });
+            const req = https.request(
+              {
+                hostname: url.hostname,
+                path: url.pathname,
+                method: "POST",
+                agent,
+                timeout: 15000,
+                headers: {
+                  "content-type": "application/json",
+                  connection: "keep-alive",
+                  "content-length": Buffer.byteLength(body),
+                },
+              },
+              (res) => {
+                let respBody = "";
+                res.on("data", (c) => (respBody += c));
+                res.on("end", () => {
+                  const ms = Math.round(performance.now() - t0);
+                  try {
+                    const d = JSON.parse(respBody);
+                    console.log(`  node https POST: ok=${d.ok} status=${res.statusCode} in ${ms}ms`);
+                  } catch {
+                    console.log(`  node https POST: status=${res.statusCode} in ${ms}ms (body not JSON)`);
+                  }
+                });
+              },
+            );
+            req.on("timeout", () => req.destroy(new Error("manual timeout")));
+            req.on("error", (err) => {
+              const ms = Math.round(performance.now() - t0);
+              console.log(`  node https POST: FAIL after ${ms}ms (${err.code || err.message})`);
+            });
+            req.end(body);
+            JS
                 echo
                 echo "── آیا ربات می‌تواند به ادمین پیام بدهد؟ ──"
                 # هر آی‌دی جدا؛ فقط عددها. پیام واقعی فرستاده می‌شود چون تنها راه قطعیِ
