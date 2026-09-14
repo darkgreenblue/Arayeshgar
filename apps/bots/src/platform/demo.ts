@@ -21,6 +21,7 @@ import { botBindings, tenants, type Db, type Platform, type Tenant } from "@aray
 import { getEnv, logger, withRetry } from "@arayeshgar/core";
 import { apiRootFor, CAPABILITIES } from "./capabilities";
 import { curlFetch } from "./curl-fetch";
+import { backfillAdminCommands, publishDefaultCommands } from "./commands";
 import type { BotCtx } from "./bot";
 
 /** `/start t_<slug>` — the payload Telegram and Bale put after the command. */
@@ -156,6 +157,11 @@ export async function getSharedDemoBot(
   });
   shared.set(platform, { bot, token });
   logger.info({ platform, username: bot.botInfo.username }, "shared demo bot initialized");
+  // See platform/commands.ts. No `tenantId` here: this bot serves every demo tenant, and
+  // demo staff have no bot of their own yet to link -- only platform admins get the /admin
+  // menu backfilled at boot.
+  void publishDefaultCommands(bot);
+  void backfillAdminCommands(bot, db, platform);
   return bot;
 }
 

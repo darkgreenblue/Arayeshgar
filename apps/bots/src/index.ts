@@ -76,7 +76,7 @@ export async function syncBots(): Promise<{ ok: number; failed: number }> {
       const token = platform === "telegram" ? tenant.telegramBotToken : tenant.baleBotToken;
       if (!featureOn || !token) continue;
       try {
-        const bot = await getBot(tenant, platform, (b) => registerAll(b, db));
+        const bot = await getBot(db, tenant, platform, (b) => registerAll(b, db));
         if (!bot) continue;
         if (env.BOT_TRANSPORT === "polling") {
           await startPolling(tenant.id, platform, bot, token);

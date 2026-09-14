@@ -297,6 +297,68 @@ describe("bot flows against a mock Bot API", () => {
     expect(api.texts().join()).not.toContain("تأیید شد");
   });
 
+  it("picks up a deposit toggled on mid-run, without rebuilding the bot", async () => {
+    // Regression for the bug where getBot() cached the tenant object from the moment this
+    // process's bot instance was first built, and kept using it forever after -- a barber
+    // flipping "بیعانه" on in the panel never saw it take effect until the process restarted,
+    // because the token (the only thing that invalidated the cache) never changed. The
+    // webhook router already re-reads the tenant fresh on every request; the bug was that
+    // getBot() threw that fresh copy away on a cache hit. This drives two bookings through
+    // the exact same in-process bot instance with a live tenant update in between.
+    const bookOnce = async (t: { id: string; webhookSecret: string }, chatId: number) => {
+      await hook(t, upd.command("/start", chatId));
+      const svcCb = (
+        api.last("sendMessage")!.body.reply_markup as {
+          inline_keyboard: { callback_data: string }[][];
+        }
+      ).inline_keyboard[0]![0]!.callback_data;
+      await hook(t, upd.callback(svcCb, chatId));
+      const dayCb = (
+        api.last("editMessageText")!.body.reply_markup as {
+          inline_keyboard: { callback_data: string }[][];
+        }
+      ).inline_keyboard[0]![0]!.callback_data;
+      await hook(t, upd.callback(dayCb, chatId));
+      const slotCb = (
+        api.last("editMessageText")!.body.reply_markup as {
+          inline_keyboard: { callback_data: string }[][];
+        }
+      ).inline_keyboard[0]![0]!.callback_data;
+      await hook(t, upd.callback(slotCb, chatId));
+      await hook(t, upd.contact(`0912${String(chatId).padStart(7, "0")}`, chatId));
+    };
+
+    const f = await makeTenant({ deposit: false });
+    created.push(f.tenant.id);
+
+    api.clear();
+    await bookOnce(f.tenant, 6001);
+    const first = (
+      await db.select().from(schema.bookings).where(eq(schema.bookings.tenantId, f.tenant.id))
+    )[0]!;
+    expect(first.status).toBe("confirmed");
+    expect(first.depositAmount).toBe(0);
+
+    // the barber turns deposit on from the web panel -- no bot restart, no new token
+    await db
+      .update(schema.tenants)
+      .set({
+        features: { ...f.tenant.features, deposit: true },
+        depositSettings: { ...f.tenant.depositSettings, enabled: true },
+      })
+      .where(eq(schema.tenants.id, f.tenant.id));
+
+    api.clear();
+    await bookOnce(f.tenant, 6002);
+    const rows = await db
+      .select()
+      .from(schema.bookings)
+      .where(eq(schema.bookings.tenantId, f.tenant.id));
+    const second = rows.find((r) => r.id !== first.id)!;
+    expect(second.status).toBe("pending_payment");
+    expect(second.depositAmount).toBe(100000);
+  });
+
   it("/my lists the customer's booking and cancels it", async () => {
     const f = await makeTenant();
     created.push(f.tenant.id);

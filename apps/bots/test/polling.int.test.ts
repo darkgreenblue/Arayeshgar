@@ -81,7 +81,7 @@ describe("long polling transport", () => {
   beforeAll(async () => {
     const tenant = await makeTenant();
     tenantId = tenant.id;
-    const bot = await getBot(tenant, "telegram", (b) => registerAll(b, db));
+    const bot = await getBot(db, tenant, "telegram", (b) => registerAll(b, db));
     if (!bot) throw new Error("bot not built");
     await startPolling(tenant.id, "telegram", bot, TOKEN);
   });
