@@ -436,33 +436,44 @@ jobs:
                 T1=$(date +%s%3N)
                 echo "  (curl گرفت در $((T1 - T0)) میلی‌ثانیه)"
                 echo
-                # چرا این بخش وجود دارد. node-net-check نشان داد fetch/https خامِ نود به
-                # ریشه‌ی api.telegram.org سریع جواب می‌گیرد، ولی bot.init() -- که دقیقاً
-                # همین مسیر /bot<token>/getMe را می‌زند -- هر بار تایم‌اوت می‌خورد، حتی
-                # وقتی همان لحظه curl به همین آدرسِ getMe (بالا) موفق است. یعنی فرقش شاید
-                # در خودِ دامنه یا DNS نباشد، بلکه در مسیرِ API واقعی با توکن باشد. این
-                # همان درخواست را با https خامِ نود (همان agent با keepAlive که grammY
-                # می‌سازد) به همان آدرس می‌زند تا معلوم شود مشکل جایی در مسیرِ Bot API است
-                # یا نه. توکن هرگز چاپ نمی‌شود؛ فقط از طریق env به پروسه‌ی نود می‌رود.
-                echo "── همان درخواست، این‌بار با https خامِ نود به‌جای curl ──"
+                # چرا این بخش وجود دارد. یک بار این چک با GET ساده نوشته شد و در کنارِ
+                # curl موفق بود -- ولی خودِ bot.init() هنوز هر بار شکست می‌خورد. تفاوت
+                # پیدا شد: grammY هرگز GET نمی‌زند؛ createJsonPayload در payload.js همیشه
+                # POST با body=`{}`، هدر content-type: application/json، و
+                # connection: keep-alive می‌سازد. این نسخه دقیقاً همان درخواست (متد،
+                # هدرها، بدنه) را با https خامِ نود می‌سازد تا معلوم شود فرق GET/POST
+                # همان جای گیر است یا نه. توکن هرگز چاپ نمی‌شود؛ فقط از env به نود می‌رود.
+                echo "── همان درخواست، این‌بار POST دقیقاً مثل grammY (نه GET) ──"
                 TG_URL="$TG/getMe" node - <<'JS' 2>&1
             const https = require("https");
             const { performance } = require("perf_hooks");
             const url = new URL(process.env.TG_URL);
+            const body = "{}";
             const t0 = performance.now();
             const agent = new https.Agent({ keepAlive: true });
             const req = https.request(
-              { hostname: url.hostname, path: url.pathname, method: "GET", agent, timeout: 15000 },
+              {
+                hostname: url.hostname,
+                path: url.pathname,
+                method: "POST",
+                agent,
+                timeout: 15000,
+                headers: {
+                  "content-type": "application/json",
+                  connection: "keep-alive",
+                  "content-length": Buffer.byteLength(body),
+                },
+              },
               (res) => {
-                let body = "";
-                res.on("data", (c) => (body += c));
+                let respBody = "";
+                res.on("data", (c) => (respBody += c));
                 res.on("end", () => {
                   const ms = Math.round(performance.now() - t0);
                   try {
-                    const d = JSON.parse(body);
-                    console.log(`  node https: ok=${d.ok} status=${res.statusCode} in ${ms}ms`);
+                    const d = JSON.parse(respBody);
+                    console.log(`  node https POST: ok=${d.ok} status=${res.statusCode} in ${ms}ms`);
                   } catch {
-                    console.log(`  node https: status=${res.statusCode} in ${ms}ms (body not JSON)`);
+                    console.log(`  node https POST: status=${res.statusCode} in ${ms}ms (body not JSON)`);
                   }
                 });
               },
@@ -470,9 +481,9 @@ jobs:
             req.on("timeout", () => req.destroy(new Error("manual timeout")));
             req.on("error", (err) => {
               const ms = Math.round(performance.now() - t0);
-              console.log(`  node https: FAIL after ${ms}ms (${err.code || err.message})`);
+              console.log(`  node https POST: FAIL after ${ms}ms (${err.code || err.message})`);
             });
-            req.end();
+            req.end(body);
             JS
                 echo
                 echo "── آیا ربات می‌تواند به ادمین پیام بدهد؟ ──"
