@@ -40,7 +40,7 @@ export function invalidateTenant(tenantId: string) {
  * arrive from a bot they have never opened — which Telegram would refuse to deliver.
  */
 async function botFor(db: Db, tenant: Tenant, platform: Platform) {
-  const own = await getBot(tenant, platform, (b) => registerAll(b, db));
+  const own = await getBot(db, tenant, platform, (b) => registerAll(b, db));
   if (own) return own;
   if (tenant.status !== "demo") return null;
   return getSharedDemoBot(db, platform, (b) => registerAll(b, db));

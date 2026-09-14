@@ -41,6 +41,7 @@ import {
 } from "@arayeshgar/core";
 import { decode, encode, matchesShort, shortId } from "../platform/callback";
 import { replyOrEdit, safeAnswerCallback, type BotCtx } from "../platform/bot";
+import { publishAdminCommands } from "../platform/commands";
 
 export function registerAdminPanel(bot: Bot<BotCtx>, db: Db) {
   bot.command("link", async (ctx) => {
@@ -57,6 +58,7 @@ export function registerAdminPanel(bot: Bot<BotCtx>, db: Db) {
       { tenantId: ctx.tenant.id, userId: u.id, platform: ctx.platform },
       "admin chat linked",
     );
+    void publishAdminCommands(bot, chatId);
     await ctx.reply(
       `✅ متصل شد، ${u.displayName} عزیز.\nاز این پس رزروها و رسیدهای جدید همین‌جا برایتان می‌آید.\n\n/admin — پنل مدیریت`,
     );

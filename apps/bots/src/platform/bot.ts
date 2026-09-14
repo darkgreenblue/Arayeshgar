@@ -5,10 +5,12 @@
  */
 import { Bot, type Context } from "grammy";
 import { autoRetry } from "@grammyjs/auto-retry";
-import type { Platform, Tenant } from "@arayeshgar/db";
+import { eq } from "drizzle-orm";
+import { tenants, type Db, type Platform, type Tenant } from "@arayeshgar/db";
 import { logger, withRetry } from "@arayeshgar/core";
 import { apiRootFor, CAPABILITIES, type Capabilities } from "./capabilities";
 import { curlFetch } from "./curl-fetch";
+import { backfillAdminCommands, publishDefaultCommands } from "./commands";
 
 export type BotCtx = Context & {
   tenant: Tenant;
@@ -27,6 +29,7 @@ export function tokenFor(tenant: Tenant, platform: Platform): string | null {
 
 /** Builds (or returns) the bot for a tenant/platform. `register` wires handlers on first build. */
 export async function getBot(
+  db: Db,
   tenant: Tenant,
   platform: Platform,
   register: (bot: Bot<BotCtx>) => void,
@@ -73,8 +76,23 @@ export async function getBot(
   bot.api.config.use(
     autoRetry({ maxRetryAttempts: 2, maxDelaySeconds: 5, rethrowHttpErrors: true }),
   );
+  // Reads the tenant fresh on every single update instead of closing over the `tenant`
+  // passed in above. That parameter is only ever fresh on the very first build of this
+  // bot -- every later call to getBot() (syncBots' 10-minute sweep, every webhook request,
+  // every outbox send) already re-reads the tenant from the DB before calling in here, but
+  // used to throw that fresh copy away the moment `hit.token === token` was true, which is
+  // true for any settings change that doesn't also rotate the bot's own token (i.e. almost
+  // every settings change there is). A barber who flips "بیعانه" on in the panel and then
+  // tests a new booking in the same running process never saw it: this bot instance's
+  // `ctx.tenant` was permanently the tenant row from whenever the process last (re)started.
+  // Mirrors how the shared demo bot in demo.ts already resolves its tenant per update --
+  // this file was the one place in the codebase that still cached tenant data past the
+  // single request/update it applies to, which the rest of the project deliberately never
+  // does (see CLAUDE.md §2 on slots). A local SQLite read on every update is cheap and,
+  // per db/write-queue.ts, reads never queue behind the write lock in WAL mode.
   bot.use(async (ctx, next) => {
-    ctx.tenant = tenant;
+    const fresh = await db.query.tenants.findFirst({ where: eq(tenants.id, tenant.id) });
+    ctx.tenant = fresh ?? tenant;
     ctx.platform = platform;
     ctx.caps = CAPABILITIES[platform];
     await next();
@@ -113,6 +131,12 @@ export async function getBot(
   });
   cache.set(k, { bot, token });
   logger.info({ tenantId: tenant.id, platform, username: bot.botInfo.username }, "bot initialized");
+  // Best-effort, never blocks a rebuild: populates Telegram/Bale's native "/" command menu,
+  // which nothing in this codebase ever set before. Every command below already worked --
+  // customers and admins alike had no way to find out /my, /book or /admin existed short of
+  // being told the exact string to type. See commands.ts for the full account.
+  void publishDefaultCommands(bot);
+  void backfillAdminCommands(bot, db, platform, tenant.id);
   return bot;
 }
 

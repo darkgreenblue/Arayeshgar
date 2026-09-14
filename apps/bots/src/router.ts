@@ -37,7 +37,7 @@ export function createRouter(db: Db) {
       platform === "telegram" ? tenant.features.telegram_bot : tenant.features.bale_bot;
     if (!featureOn) return c.json({ ok: true, skipped: "channel disabled" });
 
-    const bot = await getBot(tenant, platform, (b) => registerAll(b, db));
+    const bot = await getBot(db, tenant, platform, (b) => registerAll(b, db));
     if (!bot) return c.json({ ok: false, error: "no token" }, 503);
     // grammY's Hono adapter answers the platform immediately and processes the update.
     return webhookCallback(bot, "hono")(c);
