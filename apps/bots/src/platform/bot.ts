@@ -48,7 +48,19 @@ export async function getBot(
   const bot = new Bot<BotCtx>(token, {
     client: { apiRoot: apiRootFor(platform), timeoutSeconds: 15 },
   });
-  bot.api.config.use(autoRetry({ maxRetryAttempts: 2, maxDelaySeconds: 5 }));
+  // The real bug, found by bisecting with checkpoint logs after three timeout/DNS fixes
+  // changed nothing: `autoRetry`'s own `maxRetryAttempts` only bounds its *outer* loop,
+  // which reacts to a successful-but-rate-limited response (retry_after) or a 5xx status.
+  // A thrown HttpError -- exactly what our 15s client timeout above produces -- is caught
+  // by a *separate*, uncapped inner loop that retries forever with exponential backoff
+  // (3s, 6s, 12s, ... capped at one hour, but never capped in attempt count) unless
+  // `rethrowHttpErrors: true` is set. Without it, one timeout during bot.init() means the
+  // promise this awaits never resolves or rejects -- not in 15s, not in an hour -- so
+  // `withRetry`'s own 2-attempt limit below never even gets a chance to run out. Rethrowing
+  // here hands the error back to `withRetry`, which has its own bounded, logged retry.
+  bot.api.config.use(
+    autoRetry({ maxRetryAttempts: 2, maxDelaySeconds: 5, rethrowHttpErrors: true }),
+  );
   bot.use(async (ctx, next) => {
     ctx.tenant = tenant;
     ctx.platform = platform;
