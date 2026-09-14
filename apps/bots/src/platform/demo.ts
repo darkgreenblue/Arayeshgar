@@ -106,7 +106,14 @@ export async function getSharedDemoBot(
   const bot = new Bot<BotCtx>(token, {
     client: { apiRoot: apiRootFor(platform), timeoutSeconds: 15 },
   });
-  bot.api.config.use(autoRetry({ maxRetryAttempts: 2, maxDelaySeconds: 5 }));
+  // rethrowHttpErrors: true is load-bearing, not tuning -- see the long comment at the
+  // matching line in platform/bot.ts. Without it, this exact call is the one that hung
+  // forever in production: syncBots()'s checkpoint logs showed execution entering this
+  // function and never coming back, not even after minutes, because autoRetry's inner
+  // loop was silently swallowing our own 15s timeout and retrying it into the void.
+  bot.api.config.use(
+    autoRetry({ maxRetryAttempts: 2, maxDelaySeconds: 5, rethrowHttpErrors: true }),
+  );
   bot.use(async (ctx, next) => {
     const userId = String(ctx.from?.id ?? "");
     if (!userId) return;
