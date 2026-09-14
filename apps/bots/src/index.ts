@@ -72,7 +72,15 @@ export async function syncBots(): Promise<{ ok: number; failed: number }> {
   let ok = 0;
   let failed = 0;
   const live = new Set<string>();
+  // Temporary checkpoint: three deploys in a row (env fix, grammY timeout, DNS order)
+  // changed nothing observable -- not even the unconditional "no demo token for this
+  // platform" warning a few lines down ever showed up in the server logs, and that one
+  // does not touch the network at all. That means the hang may be here, in the plain DB
+  // read, not in bot.init() as assumed. This checkpoint settles it on the next restart
+  // instead of guessing a fourth time.
+  logger.info({}, "syncBots: about to read active tenants");
   const list = (await activeTenants(db)) as Tenant[];
+  logger.info({ count: list.length }, "syncBots: active tenants read, entering per-tenant loop");
   for (const tenant of list) {
     for (const platform of ["telegram", "bale"] as const) {
       const featureOn =
@@ -97,6 +105,9 @@ export async function syncBots(): Promise<{ ok: number; failed: number }> {
   }
   // The shared demo bots are keyed by platform, not by tenant: one instance answers for
   // every prospect, so it is started once rather than once per demo tenant.
+  // Checkpoint (same reasoning as above): bisecting further in case the per-tenant loop
+  // itself is where things stall, not just the initial DB read.
+  logger.info({}, "syncBots: per-tenant loop done, entering shared-demo-bot loop");
   for (const platform of ["telegram", "bale"] as const) {
     if (!demoTokenFor(platform)) {
       // Silent here once meant nobody could tell "no demo bot configured for this
@@ -107,11 +118,15 @@ export async function syncBots(): Promise<{ ok: number; failed: number }> {
       continue;
     }
     try {
+      logger.info({ platform }, "syncBots: about to call getSharedDemoBot (this calls bot.init())");
       const bot = await getSharedDemoBot(db, platform, (b) => registerAll(b, db));
+      logger.info({ platform, gotBot: !!bot }, "syncBots: getSharedDemoBot returned");
       if (!bot) continue;
       await publishDemoBotUsername(db, platform, bot.botInfo.username);
       if (env.BOT_TRANSPORT === "polling") {
+        logger.info({ platform }, "syncBots: about to call startPolling");
         await startPolling(DEMO_POLLER_ID, platform, bot, demoTokenFor(platform)!);
+        logger.info({ platform }, "syncBots: startPolling returned");
         live.add(pollerKey(DEMO_POLLER_ID, platform));
       }
       ok++;
