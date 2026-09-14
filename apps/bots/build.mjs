@@ -37,6 +37,8 @@ const ENTRIES = {
   // Seeds the demo tenant on an empty database and points the tunnel's hostname at it.
   // Runs on every deploy because a quick tunnel's hostname changes on every restart.
   "dist/bootstrap-demo.js": "src/bootstrap-demo.ts",
+  // Creates any committed tenants/*.json not yet on this server, idempotent by slug.
+  "dist/bootstrap-tenants.js": "src/bootstrap-tenants.ts",
 };
 
 const results = [];
