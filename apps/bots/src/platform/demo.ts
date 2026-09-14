@@ -136,7 +136,15 @@ export async function getSharedDemoBot(
       "shared demo bot handler failed",
     );
   });
-  await withRetry(() => bot.init(), { label: `${platform}.demo.init`, attempts: 2 });
+  // See the long comment at the matching line in platform/bot.ts: passing the signal
+  // through is the actual fix, not the rethrowHttpErrors line above it. grammY's own
+  // Bot.init() has its own internal, uncapped retry loop with no attempt limit and no
+  // configuration option except this AbortSignal -- without it, this exact call is the
+  // one that hung forever in production even after the auto-retry plugin was fixed.
+  await withRetry((signal) => bot.init(signal as Parameters<typeof bot.init>[0]), {
+    label: `${platform}.demo.init`,
+    attempts: 2,
+  });
   shared.set(platform, { bot, token });
   logger.info({ platform, username: bot.botInfo.username }, "shared demo bot initialized");
   return bot;

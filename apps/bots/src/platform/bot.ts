@@ -75,7 +75,30 @@ export async function getBot(
     );
   });
   // init() fetches getMe; required before handling updates.
-  await withRetry(() => bot.init(), { label: `${platform}.init`, attempts: 2 });
+  //
+  // The `(signal) => bot.init(signal)` here is not decoration -- it is the actual fix.
+  // grammY's own `Bot.init()` wraps the getMe call in its OWN internal retry helper
+  // (bot.js's `withRetries`, unrelated to the `@grammyjs/auto-retry` plugin above), and
+  // that helper has no attempt limit of its own at all -- it retries forever on any
+  // HttpError, with backoff only capped at 20 minutes *between* attempts, not in count.
+  // The only way grammY lets you bound it is the AbortSignal parameter on `init()`.
+  // Every previous fix here (env check, client timeoutSeconds, DNS ipv4first, then
+  // rethrowHttpErrors on the plugin above) addressed a real problem one layer up, but
+  // none of them could touch this: `bot.init()` with no argument means grammY's own
+  // retry loop runs with signal === undefined, so it never has a reason to stop. Passing
+  // withRetry's own controller.signal through means that once withRetry's timeout fires,
+  // grammY's retry loop sees an aborted signal, rejects immediately instead of sleeping
+  // for its next backoff, and withRetry's own bounded, logged retry finally gets to run.
+  //
+  // grammY's Node build types this parameter against the `abort-controller` npm polyfill,
+  // not the native global AbortSignal our own withRetry creates -- structurally identical
+  // at runtime (both implement the same aborted/addEventListener/removeEventListener
+  // surface grammY actually calls), but TypeScript treats them as distinct classes. The
+  // cast below is exactly that mismatch, nothing more.
+  await withRetry((signal) => bot.init(signal as Parameters<typeof bot.init>[0]), {
+    label: `${platform}.init`,
+    attempts: 2,
+  });
   cache.set(k, { bot, token });
   logger.info({ tenantId: tenant.id, platform, username: bot.botInfo.username }, "bot initialized");
   return bot;
