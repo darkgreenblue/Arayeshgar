@@ -26,6 +26,7 @@ on:
             admin-remove,
             bot-check,
             node-net-check,
+            bind-demo-domain,
           ]
         required: true
       lines:
@@ -36,6 +37,9 @@ on:
         default: ""
       telegram_id:
         description: "admin-add / admin-remove: آی‌دی عددی تلگرام"
+        default: ""
+      slug:
+        description: "bind-demo-domain: اسلاگ مستاجرِ demo که لینک تونل مشترک باید نشانش بدهد"
         default: ""
 
 jobs:
@@ -119,13 +123,14 @@ jobs:
           OPS_LINES: ${{ inputs.lines }}
           OPS_QUERY: ${{ inputs.query }}
           OPS_TGID: ${{ inputs.telegram_id }}
+          OPS_SLUG: ${{ inputs.slug }}
           PROJ: arayeshgar
         with:
           host: 185.204.171.170
           username: ubuntu
           key: ${{ secrets.VPS_SSH_KEY }}
           # قاعده‌ی ۵ بند ۵: هرچه اسکریپت می‌خواند باید اینجا هم باشد وگرنه خالی می‌رسد
-          envs: OPS_ACTION,OPS_LINES,OPS_QUERY,OPS_TGID,PROJ
+          envs: OPS_ACTION,OPS_LINES,OPS_QUERY,OPS_TGID,OPS_SLUG,PROJ
           script: |
             set -e
             case "$OPS_LINES" in (*[!0-9]*|'') OPS_LINES=100;; esac
@@ -577,6 +582,63 @@ jobs:
 
             main();
             JS
+                ;;
+
+              bind-demo-domain)
+                # چرا این اکشن وجود دارد. فقط یک آدرس تونل مشترک هست (تونل quick رایگان
+                # است) و در دیتابیس به‌طور پیش‌فرض به مستاجر عمومی «demo» وصل می‌شود، نه
+                # به مستاجرِ واقعیِ مشتری‌ای که می‌خواهیم نشان بدهیم — دقیقاً همان چیزی که
+                # باعث شد لینک همیشه سایتِ ساده‌ی عمومی را نشان بدهد، نه سایتِ اختصاصیِ
+                # رضا حسینی. این اکشن آن آدرسِ زنده را از لاگِ تونل می‌خواند و ستونِ
+                # custom_domain را به مستاجرِ خواسته‌شده جابه‌جا می‌کند. عمداً فقط روی
+                # مستاجرهای status=demo کار می‌کند — یعنی هرگز دامنه‌ی یک مشتریِ
+                # فروخته‌شده را دست‌کاری نمی‌کند. چون این ستون یکتا (UNIQUE) است، مستاجرِ
+                # قبلی که همین مقدار را داشت باید در همان تراکنش خالی شود، وگرنه درج دوم
+                # با نقضِ محدودیتِ یکتایی شکست می‌خورد.
+                case "$OPS_SLUG" in (*[!a-z0-9-]*|'') echo "❌ اسلاگ باید فقط حروف کوچک/عدد/خط تیره باشد"; exit 1;; esac
+                LIVE="$(grep -ohE 'https://[a-z0-9-]+\.trycloudflare\.com' \
+                        $LOGS/tunnel-*.log 2>/dev/null | tail -1)"
+                if [ -z "$LIVE" ]; then
+                  echo "❌ لینک تونلِ زنده پیدا نشد ⇒ اول Ops → status را ببینید"
+                  exit 1
+                fi
+                HOST="$(printf '%s' "$LIVE" | sed -E 's#^https://##')"
+                cd "$DIR"
+                OPS_HOST="$HOST" python3 - <<'PY' 2>&1
+            import os, sqlite3, time, uuid
+            con = sqlite3.connect(os.environ["DB_PATH"], timeout=5, isolation_level=None)
+            con.execute("PRAGMA busy_timeout = 5000")
+            slug = os.environ["OPS_SLUG"]
+            host = os.environ["OPS_HOST"]
+            now = int(time.time())
+            con.execute("BEGIN IMMEDIATE")
+            target = con.execute(
+                "SELECT id, custom_domain FROM tenants WHERE slug = ? AND status = ?", (slug, "demo")
+            ).fetchone()
+            if not target:
+                con.execute("ROLLBACK")
+                print("❌ مستاجری با این اسلاگ و status=demo پیدا نشد:", slug)
+                raise SystemExit(1)
+            target_id, already = target
+            if already == host:
+                con.execute("ROLLBACK")
+                print("✅ همین الان هم", slug, "به همین آدرس وصل است، کاری لازم نبود")
+                raise SystemExit(0)
+            holder = con.execute(
+                "SELECT id, slug FROM tenants WHERE custom_domain = ?", (host,)
+            ).fetchone()
+            if holder:
+                con.execute("UPDATE tenants SET custom_domain = NULL WHERE id = ?", (holder[0],))
+                print("قبلاً مالِ", holder[1], "بود، خالی شد")
+            con.execute("UPDATE tenants SET custom_domain = ? WHERE id = ?", (host, target_id))
+            con.execute(
+                "INSERT INTO audit_log (id, tenant_id, actor_type, actor_id, action, entity, entity_id,"
+                " data, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (str(uuid.uuid4()), target_id, "system", "ops-workflow", "bind-demo-domain",
+                 "tenant", target_id, '{"via":"ops"}', now))
+            con.execute("COMMIT")
+            print("✅", slug, "حالا به", host, "وصل است")
+            PY
                 ;;
 
             esac
