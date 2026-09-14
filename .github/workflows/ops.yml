@@ -418,6 +418,7 @@ jobs:
                 echo
                 echo "── ربات کیست؟ (getMe) ──"
                 TG="https://api.telegram.org/bot$DEMO_TELEGRAM_BOT_TOKEN"
+                T0=$(date +%s%3N)
                 curl -s -m 20 "$TG/getMe" | python3 -c '
             import json, sys
             try:
@@ -432,6 +433,47 @@ jobs:
             print("  ✅ @%s  (نام: %s · id: %s)" % (r.get("username"), r.get("first_name"), r.get("id")))
             print("  لینک ربات: https://t.me/%s" % r.get("username"))
             '
+                T1=$(date +%s%3N)
+                echo "  (curl گرفت در $((T1 - T0)) میلی‌ثانیه)"
+                echo
+                # چرا این بخش وجود دارد. node-net-check نشان داد fetch/https خامِ نود به
+                # ریشه‌ی api.telegram.org سریع جواب می‌گیرد، ولی bot.init() -- که دقیقاً
+                # همین مسیر /bot<token>/getMe را می‌زند -- هر بار تایم‌اوت می‌خورد، حتی
+                # وقتی همان لحظه curl به همین آدرسِ getMe (بالا) موفق است. یعنی فرقش شاید
+                # در خودِ دامنه یا DNS نباشد، بلکه در مسیرِ API واقعی با توکن باشد. این
+                # همان درخواست را با https خامِ نود (همان agent با keepAlive که grammY
+                # می‌سازد) به همان آدرس می‌زند تا معلوم شود مشکل جایی در مسیرِ Bot API است
+                # یا نه. توکن هرگز چاپ نمی‌شود؛ فقط از طریق env به پروسه‌ی نود می‌رود.
+                echo "── همان درخواست، این‌بار با https خامِ نود به‌جای curl ──"
+                TG_URL="$TG/getMe" node - <<'JS' 2>&1
+            const https = require("https");
+            const { performance } = require("perf_hooks");
+            const url = new URL(process.env.TG_URL);
+            const t0 = performance.now();
+            const agent = new https.Agent({ keepAlive: true });
+            const req = https.request(
+              { hostname: url.hostname, path: url.pathname, method: "GET", agent, timeout: 15000 },
+              (res) => {
+                let body = "";
+                res.on("data", (c) => (body += c));
+                res.on("end", () => {
+                  const ms = Math.round(performance.now() - t0);
+                  try {
+                    const d = JSON.parse(body);
+                    console.log(`  node https: ok=${d.ok} status=${res.statusCode} in ${ms}ms`);
+                  } catch {
+                    console.log(`  node https: status=${res.statusCode} in ${ms}ms (body not JSON)`);
+                  }
+                });
+              },
+            );
+            req.on("timeout", () => req.destroy(new Error("manual timeout")));
+            req.on("error", (err) => {
+              const ms = Math.round(performance.now() - t0);
+              console.log(`  node https: FAIL after ${ms}ms (${err.code || err.message})`);
+            });
+            req.end();
+            JS
                 echo
                 echo "── آیا ربات می‌تواند به ادمین پیام بدهد؟ ──"
                 # هر آی‌دی جدا؛ فقط عددها. پیام واقعی فرستاده می‌شود چون تنها راه قطعیِ
