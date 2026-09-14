@@ -4,6 +4,7 @@
  *  - worker loop: expire unpaid bookings, enqueue reminders, drain the notification outbox
  *  - on boot (and every 10 minutes) it makes sure every active tenant's webhook is registered
  */
+import dns from "node:dns";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { sql } from "drizzle-orm";
@@ -17,6 +18,22 @@ import { registerAll } from "./register";
 import { ensureWebhook } from "./platform/webhook";
 import { pollerKey, startPolling, stopAllPolling, stopPollersNotIn } from "./platform/polling";
 import { demoTokenFor, getSharedDemoBot, publishDemoBotUsername } from "./platform/demo";
+
+/**
+ * Measured directly on the shared server, not assumed: `bot.init()` (grammY's own fetch,
+ * via undici) hung for 20+ minutes reaching api.telegram.org even with an explicit
+ * `timeoutSeconds: 15` on the client, while `curl` to the exact same host from the exact
+ * same box succeeded in under 200ms at the same moment. That split (fetch hangs, curl
+ * doesn't, same host, same box) is the signature of Node's DNS default: since Node 17,
+ * `dns.lookup` returns addresses in whatever order the resolver gives them ("verbatim"),
+ * which can hand back an IPv6 address first even when this box's IPv6 route to that
+ * particular destination is dead — and unlike curl's Happy Eyeballs, undici's own doesn't
+ * reliably save it. The tunnel's own log (`ip=2606:4700:...`) already showed this box using
+ * IPv6 elsewhere, so a half-broken v6 path to Telegram specifically is consistent with
+ * everything observed. This must run before any DNS lookup anywhere in the process, so it
+ * sits above every other import's own module-load side effects.
+ */
+dns.setDefaultResultOrder("ipv4first");
 
 process.env.SERVICE_NAME = "bots";
 /**
