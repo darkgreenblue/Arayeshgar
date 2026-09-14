@@ -19,6 +19,7 @@ on:
             errors,
             restart,
             env-check,
+            bots-env-check,
             db-query,
             admin-list,
             admin-add,
@@ -277,6 +278,40 @@ jobs:
                 [ -f "$DIR/.env" ] && echo ".env ✅ موجود ($(wc -l < "$DIR/.env") خط)" || echo ".env ❌ نیست"
                 [ -f "$DIR/data/$PROJ.db" ] && echo "دیتابیس ✅ ($(du -h "$DIR/data/$PROJ.db" | cut -f1))" || echo "دیتابیس ⬜ هنوز ساخته نشده"
                 [ -d "$DIR/data/uploads" ] && echo "آپلودها ✅ ($(find "$DIR/data/uploads" -type f 2>/dev/null | wc -l) فایل)" || echo "آپلودها ⬜"
+                ;;
+
+              bots-env-check)
+                # چرا این اکشن وجود دارد: ربات دمو ساکت است — نه لاگِ «initialized»، نه
+                # لاگِ خطا، هیچ. .env روی دیسک توکن دارد (bot-check همین را با curl ثابت
+                # کرد) و ADMIN_IDS مسلماً به پروسه رسیده (ensurePlatformAdmins رویش کار
+                # کرده)، ولی هیچ‌کدام از این دو ثابت نمی‌کند DEMO_TELEGRAM_BOT_TOKEN هم
+                # رسیده — فقط *فرضش* را قوی‌تر می‌کند. اینجا از خودِ کرنل می‌پرسد:
+                # /proc/<pid>/environ محیط واقعیِ همان پروسه‌ی زنده است، نه چیزی که فایل
+                # یا pm2 *ادعا* می‌کنند. فقط وجودِ کلید چاپ می‌شود، هرگز مقدارش.
+                PID="$(pm2 jlist 2>/dev/null | python3 -c '
+            import json, sys
+            apps = json.load(sys.stdin)
+            for a in apps:
+                if a.get("name") == "arayeshgar-bots":
+                    print(a.get("pid") or "")
+                    break
+            ')"
+                if [ -z "$PID" ]; then
+                  echo "❌ arayeshgar-bots بالا نیست، pid پیدا نشد"
+                  exit 1
+                fi
+                echo "pid زنده: $PID"
+                if [ ! -r "/proc/$PID/environ" ]; then
+                  echo "❌ /proc/$PID/environ خوانده نشد"
+                  exit 1
+                fi
+                for k in DEMO_TELEGRAM_BOT_TOKEN DEMO_BALE_BOT_TOKEN ADMIN_IDS BOT_TRANSPORT DATABASE_URL; do
+                  if tr '\0' '\n' < "/proc/$PID/environ" | grep -q "^$k="; then
+                    echo "  $k: ✅ در محیط واقعیِ پروسه هست"
+                  else
+                    echo "  $k: ❌ در محیط واقعیِ پروسه نیست"
+                  fi
+                done
                 ;;
 
               db-query)
