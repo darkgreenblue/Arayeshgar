@@ -8,6 +8,7 @@ import { autoRetry } from "@grammyjs/auto-retry";
 import type { Platform, Tenant } from "@arayeshgar/db";
 import { logger, withRetry } from "@arayeshgar/core";
 import { apiRootFor, CAPABILITIES, type Capabilities } from "./capabilities";
+import { curlFetch } from "./curl-fetch";
 
 export type BotCtx = Context & {
   tenant: Tenant;
@@ -45,8 +46,19 @@ export async function getBot(
   // multi-minute stall on this VPS's outbound network (the same window the cloudflared
   // tunnel logged "no recent network activity" and reconnected). A short timeout here
   // turns that into a fast, visible retry instead of a silent multi-tenant freeze.
+  //
+  // `fetch: curlFetch` is not a style choice. On the real server, Node's own network stack
+  // (fetch, https.request, with or without the exact keepAlive agent grammY builds) failed
+  // every single getMe() attempt for hours, while a `curl` *subprocess* to the exact same
+  // URL from inside the exact same process at the exact same moment succeeded every time.
+  // See curl-fetch.ts for the full account. This routes grammY's own network calls through
+  // that subprocess instead of Node's HTTP client.
   const bot = new Bot<BotCtx>(token, {
-    client: { apiRoot: apiRootFor(platform), timeoutSeconds: 15 },
+    client: {
+      apiRoot: apiRootFor(platform),
+      timeoutSeconds: 15,
+      fetch: curlFetch as unknown as typeof fetch,
+    },
   });
   // The real bug, found by bisecting with checkpoint logs after three timeout/DNS fixes
   // changed nothing: `autoRetry`'s own `maxRetryAttempts` only bounds its *outer* loop,
