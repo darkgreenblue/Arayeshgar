@@ -20,6 +20,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { botBindings, tenants, type Db, type Platform, type Tenant } from "@arayeshgar/db";
 import { getEnv, logger, withRetry } from "@arayeshgar/core";
 import { apiRootFor, CAPABILITIES } from "./capabilities";
+import { curlFetch } from "./curl-fetch";
 import type { BotCtx } from "./bot";
 
 /** `/start t_<slug>` — the payload Telegram and Bale put after the command. */
@@ -103,8 +104,16 @@ export async function getSharedDemoBot(
   // withRetry below cannot shorten it because bot.init() never receives its AbortSignal.
   // This is the one bot every prospect's demo depends on, so a fast, visible failure here
   // matters even more than for a single tenant's own bot.
+  //
+  // `fetch: curlFetch` -- see curl-fetch.ts and the matching comment in platform/bot.ts.
+  // Node's own network stack failed every getMe() attempt for hours on the real server; a
+  // curl subprocess to the exact same URL, from inside the exact same process, never did.
   const bot = new Bot<BotCtx>(token, {
-    client: { apiRoot: apiRootFor(platform), timeoutSeconds: 15 },
+    client: {
+      apiRoot: apiRootFor(platform),
+      timeoutSeconds: 15,
+      fetch: curlFetch as unknown as typeof fetch,
+    },
   });
   // rethrowHttpErrors: true is load-bearing, not tuning -- see the long comment at the
   // matching line in platform/bot.ts. Without it, this exact call is the one that hung
