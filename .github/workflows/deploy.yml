@@ -345,6 +345,16 @@ jobs:
           if ! node "$DIR/bots/bootstrap-demo.js" "$URL"; then
             echo "⚠️  bootstrap-demo شکست خورد ⇒ ممکن است لینک دمو ۴۰۴ بدهد (بخش «دمو» در چک سلامت را ببینید)"
           fi
+
+          # هر مشتریِ واقعیِ کامیت‌شده در tenants/*.json را می‌سازد — همان‌طور که بالا
+          # مستاجرِ دمو را می‌سازد، ولی برای مستاجرهای اسم‌دار و idempotent با slug. بدون
+          # این، یک مستاجرِ ساخته‌شده در PR فقط روی دیتابیس محلیِ سازنده‌اش زنده می‌ماند —
+          # عکس‌هایش با استاندالونِ وب می‌رسند (apps/web/public از قبل کپی می‌شود) ولی
+          # ردیفِ مستاجر که سایت را resolve می‌کند هرگز نمی‌رسید. قرمز نمی‌کند به همان
+          # دلیل بالا: خرابیِ داده است، نه چیزی که برگرداندنِ کد حلش کند.
+          if ! node "$DIR/bots/bootstrap-tenants.js" "$DIR/tenants"; then
+            echo "⚠️  bootstrap-tenants شکست خورد ⇒ لاگ بالا را برای جزئیات ببینید"
+          fi
           REMOTE
 
       - name: health check, and roll back if it fails

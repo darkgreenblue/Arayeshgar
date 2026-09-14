@@ -37,7 +37,7 @@ cp -a "$ROOT/apps/web/.next/static" "$OUT/web/apps/web/.next/static"
 
 # ── bots ───────────────────────────────────────────────────────────────────────────────
 mkdir -p "$OUT/bots"
-for f in index migrate bootstrap-demo; do
+for f in index migrate bootstrap-demo bootstrap-tenants; do
   cp "$ROOT/apps/bots/dist/$f.js" "$OUT/bots/$f.js"
   # Source maps are worth their disk here: `Ops → errors` is the only view into a crash,
   # and a stack trace through 2 MB of bundled output is unreadable without them.
@@ -76,6 +76,11 @@ fi
 cp -a "$ROOT/packages/db/drizzle" "$OUT/drizzle"
 cp "$ROOT/ecosystem.config.cjs" "$OUT/ecosystem.config.cjs"
 
+# ── bespoke tenants ────────────────────────────────────────────────────────────────────
+# Read by bots/bootstrap-tenants.js on every deploy. Each file is a real, committed build
+# (Reza Hosseini's is the first) in the same shape `pnpm tenant:create` accepts.
+[ -d "$ROOT/tenants" ] && cp -a "$ROOT/tenants" "$OUT/tenants"
+
 # ── prove the process list points at files that exist ──────────────────────────────────
 # Written because it did not: `ecosystem.config.cjs` said `web/server.js` while the
 # standalone entry is `web/apps/web/server.js`, and nothing in the pipeline disagreed.
@@ -107,4 +112,4 @@ CHECK
 
 echo "✅ staged → $OUT"
 du -sh "$OUT" "$OUT/web" "$OUT/bots" 2>/dev/null || true
-echo "   one-shot entries: bots/migrate.js · bots/bootstrap-demo.js"
+echo "   one-shot entries: bots/migrate.js · bots/bootstrap-demo.js · bots/bootstrap-tenants.js"
