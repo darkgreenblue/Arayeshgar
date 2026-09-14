@@ -5,7 +5,6 @@
  *  - on boot (and every 10 minutes) it makes sure every active tenant's webhook is registered
  */
 import dns from "node:dns";
-import { execFileSync } from "node:child_process";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { sql } from "drizzle-orm";
@@ -21,18 +20,14 @@ import { pollerKey, startPolling, stopAllPolling, stopPollersNotIn } from "./pla
 import { demoTokenFor, getSharedDemoBot, publishDemoBotUsername } from "./platform/demo";
 
 /**
- * Measured directly on the shared server, not assumed: `bot.init()` (grammY's own fetch,
- * via undici) hung for 20+ minutes reaching api.telegram.org even with an explicit
- * `timeoutSeconds: 15` on the client, while `curl` to the exact same host from the exact
- * same box succeeded in under 200ms at the same moment. That split (fetch hangs, curl
- * doesn't, same host, same box) is the signature of Node's DNS default: since Node 17,
- * `dns.lookup` returns addresses in whatever order the resolver gives them ("verbatim"),
- * which can hand back an IPv6 address first even when this box's IPv6 route to that
- * particular destination is dead — and unlike curl's Happy Eyeballs, undici's own doesn't
- * reliably save it. The tunnel's own log (`ip=2606:4700:...`) already showed this box using
- * IPv6 elsewhere, so a half-broken v6 path to Telegram specifically is consistent with
- * everything observed. This must run before any DNS lookup anywhere in the process, so it
- * sits above every other import's own module-load side effects.
+ * A reasonable, cheap default for any Node-level networking this process still does on its
+ * own (the DB client, the Hono server, anything besides Telegram/Bale traffic). It is not
+ * what fixed the bot: on the shared server, Node's own fetch to api.telegram.org kept
+ * failing regardless of this setting, DNS family, or agent config, while `curl` to the exact
+ * same host from the exact same process always succeeded. See platform/curl-fetch.ts for
+ * what actually resolved that — grammY's own network calls now go through a curl subprocess
+ * instead of Node's HTTP stack. This line stays as a harmless, generically-good default for
+ * everything else, not as a fix for anything specific anymore.
  */
 dns.setDefaultResultOrder("ipv4first");
 
@@ -73,15 +68,7 @@ export async function syncBots(): Promise<{ ok: number; failed: number }> {
   let ok = 0;
   let failed = 0;
   const live = new Set<string>();
-  // Temporary checkpoint: three deploys in a row (env fix, grammY timeout, DNS order)
-  // changed nothing observable -- not even the unconditional "no demo token for this
-  // platform" warning a few lines down ever showed up in the server logs, and that one
-  // does not touch the network at all. That means the hang may be here, in the plain DB
-  // read, not in bot.init() as assumed. This checkpoint settles it on the next restart
-  // instead of guessing a fourth time.
-  logger.info({}, "syncBots: about to read active tenants");
   const list = (await activeTenants(db)) as Tenant[];
-  logger.info({ count: list.length }, "syncBots: active tenants read, entering per-tenant loop");
   for (const tenant of list) {
     for (const platform of ["telegram", "bale"] as const) {
       const featureOn =
@@ -106,35 +93,6 @@ export async function syncBots(): Promise<{ ok: number; failed: number }> {
   }
   // The shared demo bots are keyed by platform, not by tenant: one instance answers for
   // every prospect, so it is started once rather than once per demo tenant.
-  // Checkpoint (same reasoning as above): bisecting further in case the per-tenant loop
-  // itself is where things stall, not just the initial DB read.
-  logger.info({}, "syncBots: per-tenant loop done, entering shared-demo-bot loop");
-  // TEMPORARY diagnostic, to be removed once this is resolved. Every ad-hoc test run over
-  // SSH -- curl, plain Node https, Node https with the exact keepAlive agent grammY builds,
-  // even a POST matching grammY's exact method/headers/body -- succeeds in well under a
-  // second. The live arayeshgar-bots process itself, across multiple fresh restarts, has
-  // failed bot.init() 100% of the time. The one thing no test so far has controlled for is
-  // the process context itself: this runs inside the actual pm2/systemd-managed process, at
-  // the actual moment syncBots() runs, using a curl *subprocess* rather than Node's own
-  // network stack. If this succeeds where grammY's call fails moments later, the problem is
-  // isolated to Node's own networking in this process; if this also fails, it is something
-  // about the process/cgroup context itself, not Node specifically. The token reaches curl
-  // only via a subprocess environment variable, never as a literal argument another user on
-  // this shared server could see with `ps`.
-  try {
-    const t0 = Date.now();
-    const out = execFileSync(
-      "bash",
-      [
-        "-c",
-        'curl -s -m 12 -o /dev/null -w "%{http_code} %{time_total}s" "https://api.telegram.org/bot$CURL_DIAG_TOKEN/getMe"',
-      ],
-      { env: { ...process.env, CURL_DIAG_TOKEN: demoTokenFor("telegram") ?? "" }, timeout: 15000 },
-    ).toString();
-    logger.info({ out, ms: Date.now() - t0 }, "syncBots: same-process curl subprocess diagnostic");
-  } catch (err) {
-    logger.error({ err: String(err) }, "syncBots: same-process curl subprocess diagnostic failed");
-  }
   for (const platform of ["telegram", "bale"] as const) {
     if (!demoTokenFor(platform)) {
       // Silent here once meant nobody could tell "no demo bot configured for this
@@ -145,15 +103,11 @@ export async function syncBots(): Promise<{ ok: number; failed: number }> {
       continue;
     }
     try {
-      logger.info({ platform }, "syncBots: about to call getSharedDemoBot (this calls bot.init())");
       const bot = await getSharedDemoBot(db, platform, (b) => registerAll(b, db));
-      logger.info({ platform, gotBot: !!bot }, "syncBots: getSharedDemoBot returned");
       if (!bot) continue;
       await publishDemoBotUsername(db, platform, bot.botInfo.username);
       if (env.BOT_TRANSPORT === "polling") {
-        logger.info({ platform }, "syncBots: about to call startPolling");
         await startPolling(DEMO_POLLER_ID, platform, bot, demoTokenFor(platform)!);
-        logger.info({ platform }, "syncBots: startPolling returned");
         live.add(pollerKey(DEMO_POLLER_ID, platform));
       }
       ok++;
