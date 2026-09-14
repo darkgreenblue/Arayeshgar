@@ -81,7 +81,14 @@ export async function syncBots(): Promise<{ ok: number; failed: number }> {
   // The shared demo bots are keyed by platform, not by tenant: one instance answers for
   // every prospect, so it is started once rather than once per demo tenant.
   for (const platform of ["telegram", "bale"] as const) {
-    if (!demoTokenFor(platform)) continue;
+    if (!demoTokenFor(platform)) {
+      // Silent here once meant nobody could tell "no demo bot configured for this
+      // platform" from "the token failed to reach this process" — both looked like
+      // nothing happening at all. Reza Hosseini's demo bot link went dead for this
+      // exact reason and there was no log to point at.
+      logger.warn({ platform }, "no demo token for this platform — shared demo bot not started");
+      continue;
+    }
     try {
       const bot = await getSharedDemoBot(db, platform, (b) => registerAll(b, db));
       if (!bot) continue;
@@ -98,7 +105,10 @@ export async function syncBots(): Promise<{ ok: number; failed: number }> {
   }
 
   if (env.BOT_TRANSPORT === "polling") await stopPollersNotIn(live);
-  if (ok || failed) logger.info({ transport: env.BOT_TRANSPORT, ok, failed }, "bot sync finished");
+  // Always, not just when ok||failed — "0 and 0" is itself the finding when it happens on
+  // a server that is supposed to be running a demo bot, and the guarded version above hid
+  // exactly that case for as long as this file has existed.
+  logger.info({ transport: env.BOT_TRANSPORT, ok, failed }, "bot sync finished");
   return { ok, failed };
 }
 
