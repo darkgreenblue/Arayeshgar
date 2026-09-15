@@ -1,11 +1,12 @@
 /**
  * Theme D «شب و پرتره»: built for a solo barber whose trust signal is his own work, not a
  * shopfront — an Instagram-led business where the photo grid IS the pitch. Two structural
- * differences from «شب و طلا» (which shares the same dark paper band): the hero is a single
- * typographic moment (Aceternity's "Lamp" component, see components/ui/lamp.tsx) rather than a
- * hero photo, and the gallery moves directly after it — before services, before about — because
- * for this kind of client the work sells the booking, not the other way around. See
- * apps/web/src/themes/tenant-directions/reza-hosseini.md for the brief this was built from.
+ * differences from «شب و طلا» (which shares the same dark paper band): the hero itself is an
+ * animated marquee of the tenant's own work photos (Magic UI's "Marquee", see
+ * components/ui/marquee.tsx) instead of a static hero photo, and the full gallery moves directly
+ * after it — before services, before about — because for this kind of client the work sells the
+ * booking, not the other way around. See apps/web/src/themes/tenant-directions/reza-hosseini.md
+ * for the brief this was built from.
  */
 import Link from "next/link";
 import type { SiteContent } from "@arayeshgar/core";
@@ -51,6 +52,7 @@ export function NightPortrait({ content }: { content: SiteContent }) {
         <NightPortraitHero
           displayName={b.displayName}
           neighbourhood={b.address?.split("،").pop()?.trim() || "تهران"}
+          gallery={b.gallery}
         />
 
         <Section id="gallery" title="نمونه‌کارها">
