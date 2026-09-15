@@ -41,6 +41,9 @@ on:
       slug:
         description: "bind-demo-domain: اسلاگ مستاجرِ demo که لینک تونل مشترک باید نشانش بدهد"
         default: ""
+      domain:
+        description: "bind-demo-domain: هاست‌نیمِ صریح (وقتی خالی باشد، مثل قبل از لاگِ تونلِ کلادفلر خوانده می‌شود — که در حالتِ آروان دیگر پر نمی‌شود)"
+        default: ""
 
 jobs:
   ops:
@@ -124,13 +127,14 @@ jobs:
           OPS_QUERY: ${{ inputs.query }}
           OPS_TGID: ${{ inputs.telegram_id }}
           OPS_SLUG: ${{ inputs.slug }}
+          OPS_DOMAIN: ${{ inputs.domain }}
           PROJ: arayeshgar
         with:
           host: 185.204.171.170
           username: ubuntu
           key: ${{ secrets.VPS_SSH_KEY }}
           # قاعده‌ی ۵ بند ۵: هرچه اسکریپت می‌خواند باید اینجا هم باشد وگرنه خالی می‌رسد
-          envs: OPS_ACTION,OPS_LINES,OPS_QUERY,OPS_TGID,OPS_SLUG,PROJ
+          envs: OPS_ACTION,OPS_LINES,OPS_QUERY,OPS_TGID,OPS_SLUG,OPS_DOMAIN,PROJ
           script: |
             set -e
             case "$OPS_LINES" in (*[!0-9]*|'') OPS_LINES=100;; esac
@@ -531,13 +535,23 @@ jobs:
                 # قبلی که همین مقدار را داشت باید در همان تراکنش خالی شود، وگرنه درج دوم
                 # با نقضِ محدودیتِ یکتایی شکست می‌خورد.
                 case "$OPS_SLUG" in (*[!a-z0-9-]*|'') echo "❌ اسلاگ باید فقط حروف کوچک/عدد/خط تیره باشد"; exit 1;; esac
-                LIVE="$(grep -ohE 'https://[a-z0-9-]+\.trycloudflare\.com' \
-                        $LOGS/tunnel-*.log 2>/dev/null | tail -1)"
-                if [ -z "$LIVE" ]; then
-                  echo "❌ لینک تونلِ زنده پیدا نشد ⇒ اول Ops → status را ببینید"
-                  exit 1
+                # حالتِ آروان تونل کلادفلر ندارد، پس لاگِ تونل هرگز پر نمی‌شود. `domain`
+                # وقتی صریح داده شود (مثلاً `reza-hosseini.divarchand.ir`) همان استفاده
+                # می‌شود؛ خالی بماند، رفتار قدیمی (خواندن از لاگ تونل) دست‌نخورده می‌ماند.
+                if [ -n "$OPS_DOMAIN" ]; then
+                  case "$OPS_DOMAIN" in
+                    (*[!a-zA-Z0-9.-]*|'') echo "❌ domain باید فقط حروف/عدد/نقطه/خط تیره باشد"; exit 1;;
+                  esac
+                  HOST="$OPS_DOMAIN"
+                else
+                  LIVE="$(grep -ohE 'https://[a-z0-9-]+\.trycloudflare\.com' \
+                          $LOGS/tunnel-*.log 2>/dev/null | tail -1)"
+                  if [ -z "$LIVE" ]; then
+                    echo "❌ لینک تونلِ زنده پیدا نشد ⇒ اول Ops → status را ببینید (یا در حالتِ آروان، ورودیِ domain را صریح بدهید)"
+                    exit 1
+                  fi
+                  HOST="$(printf '%s' "$LIVE" | sed -E 's#^https://##')"
                 fi
-                HOST="$(printf '%s' "$LIVE" | sed -E 's#^https://##')"
                 cd "$DIR"
                 OPS_HOST="$HOST" python3 - <<'PY' 2>&1
             import os, sqlite3, time, uuid
