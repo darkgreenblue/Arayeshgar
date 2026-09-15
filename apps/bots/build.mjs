@@ -39,6 +39,9 @@ const ENTRIES = {
   "dist/bootstrap-demo.js": "src/bootstrap-demo.ts",
   // Creates any committed tenants/*.json not yet on this server, idempotent by slug.
   "dist/bootstrap-tenants.js": "src/bootstrap-tenants.ts",
+  // Reconciles the already-created Reza Hosseini demo with its committed demo contract.
+  // This is deliberately separate from bootstrap-tenants: that script never mutates existing tenants.
+  "dist/bootstrap-reza-demo.js": "src/bootstrap-reza-demo.ts",
 };
 
 const results = [];
