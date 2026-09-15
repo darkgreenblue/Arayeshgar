@@ -87,7 +87,18 @@ module.exports = {
       // path, but it is the one that exists: verified against the real build output.
       script: "web/apps/web/server.js",
       cwd: HERE,
-      env: { PORT: "8800", HOSTNAME: "127.0.0.1" },
+      // **`HOSTNAME` is normally `127.0.0.1` — the only exception is ArvanCloud origin
+      // mode.** When `ARVAN_MODE=true` (from the `ARAYESHGAR_ARVAN_MODE` secret, written
+      // into `.env` under the shorter name to match `BASE_DOMAIN`/`DEMO_DOMAIN`),
+      // ArvanCloud's CDN edge needs to reach
+      // this port directly (no outbound-only tunnel like Cloudflare's), so it binds every
+      // interface instead. That alone would expose it to the whole internet; what actually
+      // keeps it closed to everyone but ArvanCloud is `tools/arvan-firewall.sh`, called
+      // from `deploy.yml` before this app (re)starts — see that script for why iptables
+      // and not ufw. The health check independently verifies that firewall rule exists
+      // before calling a deploy healthy, exactly like it independently verifies the
+      // loopback bind in every other mode.
+      env: { PORT: "8800", HOSTNAME: process.env.ARVAN_MODE === "true" ? "0.0.0.0" : "127.0.0.1" },
       // One process: SQLite has a single writer, so a second instance would only queue
       // behind the first while doubling the memory.
       instances: 1,

@@ -150,6 +150,7 @@ jobs:
           BASE_DOMAIN: ${{ secrets.ARAYESHGAR_BASE_DOMAIN }}
           CLOUDFLARE_TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
           DEMO_DOMAIN: ${{ secrets.ARAYESHGAR_DEMO_DOMAIN }}
+          ARVAN_MODE: ${{ secrets.ARAYESHGAR_ARVAN_MODE }}
         run: |
           # نامِ سکرتِ خالی چاپ می‌شود، مقدارش هرگز (قاعده‌ی ۵).
           if [ -z "$SESSION_SECRET" ]; then
@@ -165,15 +166,26 @@ jobs:
             exit 1
           fi
           for n in OWNER_TELEGRAM_ID DEMO_TELEGRAM_BOT_TOKEN DEMO_BALE_BOT_TOKEN BASE_DOMAIN \
-                   CLOUDFLARE_TUNNEL_TOKEN DEMO_DOMAIN; do
+                   CLOUDFLARE_TUNNEL_TOKEN DEMO_DOMAIN ARVAN_MODE; do
             eval "v=\$$n"
             [ -n "$v" ] || echo "⚠️  سکرتِ خالی (اختیاری، محصول بی‌آن هم بالا می‌آید): $n"
           done
-          # این دو تا هر دو باید ست باشند یا هیچ‌کدام — یکی بدون دیگری یعنی تونلِ نام‌دار
-          # نیمه‌پیکربندی‌شده: یا توکن هست و دامنه‌ای برای ثبتش نیست، یا برعکس.
-          if { [ -n "$CLOUDFLARE_TUNNEL_TOKEN" ] && [ -z "$DEMO_DOMAIN" ]; } || \
-             { [ -z "$CLOUDFLARE_TUNNEL_TOKEN" ] && [ -n "$DEMO_DOMAIN" ]; }; then
-            echo "❌ CLOUDFLARE_TUNNEL_TOKEN و ARAYESHGAR_DEMO_DOMAIN باید هر دو ست باشند یا هیچ‌کدام"
+          # دو راهِ متفاوت برای رساندنِ همان یک دامنه به سرورند؛ نمی‌شود هر دو را هم‌زمان
+          # داشت (کدام یکی واقعاً باید بالا بیاید؟) و هیچ‌کدام بدون ARAYESHGAR_DEMO_DOMAIN
+          # معنی ندارند (دامنه‌ای برای ثبت‌کردن نیست).
+          MODE_COUNT=0
+          [ -n "$CLOUDFLARE_TUNNEL_TOKEN" ] && MODE_COUNT=$((MODE_COUNT + 1))
+          [ "$ARVAN_MODE" = "true" ] && MODE_COUNT=$((MODE_COUNT + 1))
+          if [ "$MODE_COUNT" -gt 1 ]; then
+            echo "❌ CLOUDFLARE_TUNNEL_TOKEN و ARAYESHGAR_ARVAN_MODE=true با هم نمی‌آیند — یکی را بردارید"
+            exit 1
+          fi
+          if [ "$MODE_COUNT" -eq 1 ] && [ -z "$DEMO_DOMAIN" ]; then
+            echo "❌ برای تونلِ نام‌دار یا حالتِ آروان، ARAYESHGAR_DEMO_DOMAIN هم لازم است"
+            exit 1
+          fi
+          if [ "$MODE_COUNT" -eq 0 ] && [ -n "$DEMO_DOMAIN" ]; then
+            echo "❌ ARAYESHGAR_DEMO_DOMAIN ست است ولی نه CLOUDFLARE_TUNNEL_TOKEN نه ARAYESHGAR_ARVAN_MODE — این دامنه هیچ‌جا ثبت نمی‌شود"
             exit 1
           fi
 
@@ -198,6 +210,7 @@ jobs:
           WORKER_INTERVAL_SEC=30
           CLOUDFLARE_TUNNEL_TOKEN=$CLOUDFLARE_TUNNEL_TOKEN
           DEMO_DOMAIN=$DEMO_DOMAIN
+          ARVAN_MODE=$ARVAN_MODE
           ENVFILE
           # فقط تعداد خطوط، هرگز محتوا.
           echo "‏.env ساخته شد ($(wc -l < "$RUNNER_TEMP/env") خط)"
@@ -258,9 +271,17 @@ jobs:
           # برای منقضی کردن یا فرستادن نیست. ۱۲۵ مگابایت رمِ یک سرور مشترک برای یک
           # پروسه‌ی بی‌کار خرج نمی‌شود.
           APPS="$PROJ-web"
+          # حالتِ آروان یعنی خودِ پورت وب (با فایروالِ محدود به IPهای آروان) تنها راهِ
+          # ورود است — تونل کلادفلر اصلاً لازم نیست، پس بالا نمی‌آید. برعکسش هم درست است:
           # تونل تنها راه ورود از اینترنت است، پس همیشه بالا می‌آید — به شرط اینکه
           # cloudflared روی سرور باشد (بود: نسخه‌ی 2026.7.1).
-          if command -v cloudflared >/dev/null 2>&1; then
+          if [ "$ARVAN_MODE" = "true" ]; then
+            echo "حالتِ آروان فعال است ⇒ تونل کلادفلر لازم نیست"
+            if pm2 jlist 2>/dev/null | grep -q "\"name\":\"$PROJ-tunnel\""; then
+              pm2 delete "$PROJ-tunnel" || true
+              echo "تونلِ باقی‌مانده از دیپلویِ قبلی حذف شد"
+            fi
+          elif command -v cloudflared >/dev/null 2>&1; then
             APPS="$APPS,$PROJ-tunnel"
           else
             echo "⚠️  cloudflared نیست ⇒ تونل بالا نمی‌آید و سایت از بیرون در دسترس نخواهد بود"
@@ -277,6 +298,21 @@ jobs:
             fi
           fi
           echo "APPS=$APPS" > "$DIR/.deployed-apps"
+
+          # **فایروال قبل از بالا آمدنِ اپ.** ترتیب عمدی است: اگر اول اپ روی 0.0.0.0
+          # بالا بیاید و بعد فایروال تنظیم شود، هرچند کوتاه، پورت ۸۸۰۰ بدونِ محافظ روی
+          # کل اینترنت باز بوده. اسکریپت idempotent است (بار اول قانون می‌سازد، بارهای
+          # بعد فقط دوباره می‌سازدشان) پس اجرای آن در هر دیپلوی بی‌خطر است.
+          if [ "$ARVAN_MODE" = "true" ]; then
+            bash "$DIR/tools/arvan-firewall.sh"
+            # نبودِ deploy بعدی نباید یعنی نبودِ فایروال بعدی هم باشد — این قانون‌ها روی
+            # دیسک ماندگار نیستند و یک ری‌بوتِ سرور پاکشان می‌کند. کرون با حفظِ خطوطِ
+            # موجود (بند ۵ قاعده‌ی ۷ PLATFORM.md)، نه بازنویسیِ کامل.
+            LINE="@reboot bash $DIR/tools/arvan-firewall.sh >> $DIR/data/logs/firewall-boot.log 2>&1"
+            EXISTING="$(crontab -l 2>/dev/null | grep -v 'arvan-firewall.sh' || true)"
+            printf '%s\n%s\n' "$EXISTING" "$LINE" | sed '/^$/d' | crontab -
+            crontab -l | grep -q 'arvan-firewall.sh' || echo "⚠️  نصبِ کرونِ فایروال شکست خورد"
+          fi
 
           # `--only` یعنی هیچ اپ محصول دیگری لمس نمی‌شود، حتی اگر ecosystem چیز دیگری داشت.
           pm2 startOrReload ecosystem.config.cjs --only "$APPS" --update-env
@@ -302,6 +338,15 @@ jobs:
           # اینجا برنداریمش، آدرس دمو عملاً گم است. لاگ قبلی پاک می‌شود تا آدرسِ اجرای
           # قبلی را اشتباهی به‌عنوان آدرس فعلی برنداریم.
           URL=""
+          if [ "$ARVAN_MODE" = "true" ]; then
+            # هاست‌نیمِ ثابت است (دامنه‌ی خودِ مالک)، نه چیزی که یک تونل موقع بالا آمدن
+            # بدهد — پس نیازی به کندن آدرس از لاگ یا صبر برای بالا آمدنِ پروسه‌ی تونل
+            # نیست؛ خودِ اپِ وب (که چند خط بالاتر با فایروال محافظت‌شده بالا آمد) کافی
+            # است.
+            URL="https://$DEMO_DOMAIN"
+            printf '%s\n' "$URL" > "$DIR/data/demo-url.txt"
+            echo "🔗 دامنه‌ی ثابت (از پشتِ CDN آروان): $URL"
+          else
           case "$APPS" in
             *"$PROJ-tunnel"*)
               if [ -n "$CLOUDFLARE_TUNNEL_TOKEN" ] && [ -n "$DEMO_DOMAIN" ]; then
@@ -359,6 +404,7 @@ jobs:
               fi
               ;;
           esac
+          fi
 
           # **بدون این گام، همان لینک بالا ۴۰۴ می‌دهد.** دو کار که دیپلوی به‌تنهایی نمی‌کند:
           #   ۱) مهاجرت جدولِ خالی می‌سازد، نه مستاجر. روی دیتابیسی که هیچ مستاجری ندارد
@@ -389,9 +435,11 @@ jobs:
 
       - name: health check, and roll back if it fails
         id: health
+        env:
+          ARVAN_MODE: ${{ secrets.ARAYESHGAR_ARVAN_MODE }}
         run: |
           ssh -i ~/.ssh/deploy_key -o BatchMode=yes "$SERVER_USER@$SERVER_HOST" \
-            "PROJ='$PROJ' WEB_PORT='$WEB_PORT' BOTS_PORT='$BOTS_PORT' bash -s" <<'REMOTE'
+            "PROJ='$PROJ' WEB_PORT='$WEB_PORT' BOTS_PORT='$BOTS_PORT' ARVAN_MODE='$ARVAN_MODE' bash -s" <<'REMOTE'
           DIR="$HOME/$PROJ"
           # فقط چیزی را چک کن که واقعاً بالا آمده. اگر توکن رباتی نبود، ربات‌ها دیپلوی
           # نشده‌اند و انتظار جواب از پورتشان یعنی یک دیپلوی سالم را قرمز کردن.
@@ -427,18 +475,42 @@ jobs:
             for port in $PORTS; do
               line="$(ss -ltn 2>/dev/null | grep ":$port " || true)"
               echo "  $line"
-              case "$line" in
-                *"127.0.0.1:$port"*) : ;;
-                *) BAD="$BAD $port" ;;
-              esac
+              # در حالتِ آروان، پورتِ وب *باید* 0.0.0.0 باشد — این عمدی است، بند بعدی
+              # فایروال را جدا اندازه می‌گیرد نه اینکه اینجا فرض کند بی‌خطر است.
+              if [ "$port" = "$WEB_PORT" ] && [ "$ARVAN_MODE" = "true" ]; then
+                case "$line" in
+                  *"0.0.0.0:$port"*) : ;;
+                  *) BAD="$BAD $port(انتظارِ0.0.0.0.بود)" ;;
+                esac
+              else
+                case "$line" in
+                  *"127.0.0.1:$port"*) : ;;
+                  *) BAD="$BAD $port" ;;
+                esac
+              fi
             done
             if [ -n "$BAD" ]; then
-              echo "❌ این پورت‌ها روی loopback نیستند:$BAD"
-              echo "   یعنی روی اینترنت باز شده‌اند. اپ‌ها stop می‌شوند."
+              echo "❌ این پورت‌ها جای موردِ انتظار نیستند:$BAD"
+              echo "   اپ‌ها stop می‌شوند."
               pm2 stop "$PROJ-web" "$PROJ-bots" 2>/dev/null || true
               exit 1
             fi
-            echo "  همه روی 127.0.0.1 ✅"
+            echo "  همه جای موردِ انتظار ✅"
+
+            # ── فایروالِ پورتِ وب در حالتِ آروان: اندازه می‌گیریم، فرض نمی‌کنیم ──
+            # استپِ دیپلوی این قانون را ساخت، ولی «ساختمش» دلیل نمی‌شود که «هست». اگر
+            # به هر دلیلی نبود (خطای sudo، ری‌استارتِ سرور بینِ آن استپ و همین یکی)،
+            # پورتِ ۸۸۰۰ همین الان برای کلِ اینترنت باز است و باید همین‌جا فهمیده شود.
+            if [ "$ARVAN_MODE" = "true" ]; then
+              if sudo iptables -C INPUT -p tcp --dport "$WEB_PORT" -j DROP 2>/dev/null; then
+                echo "  ✅ فایروالِ پورتِ $WEB_PORT: قانونِ DROP برای غیر-آروان هست"
+              else
+                echo "❌ فایروالِ پورتِ $WEB_PORT نیست ⇒ همین الان برای کلِ اینترنت باز است."
+                echo "   اپ‌ها stop می‌شوند."
+                pm2 stop "$PROJ-web" "$PROJ-bots" 2>/dev/null || true
+                exit 1
+              fi
+            fi
 
             # ── دمو: خودِ لینک، نه فرضِ اینکه کار می‌کند ──
             # این چک وجود دارد چون دقیقاً همین شکل خرابی یک بار آماده‌ی شیپ شدن بود: وب
@@ -454,6 +526,7 @@ jobs:
             # نمی‌کرد. به‌جایش `/api/health` خودش می‌گوید این هاست به کدام مستاجر رسید.
             HOST="$(sed -e 's#^https\?://##' -e 's#/.*##' "$DIR/data/demo-url.txt" 2>/dev/null | tr -d '[:space:]' || true)"
             case "$APPS" in *"$PROJ-tunnel"*) WANT_DEMO=yes ;; *) WANT_DEMO="" ;; esac
+            [ "$ARVAN_MODE" = "true" ] && WANT_DEMO=yes
             if [ -z "$HOST" ] && [ -n "$WANT_DEMO" ]; then
               # **این شاخه قبلاً ⚠️ می‌داد و exit 0.** اولین دیپلوی واقعی از همین‌جا سبز
               # رد شد بدون اینکه لینک دمویی وجود داشته باشد — یک گاردِ دیگر که فقط
