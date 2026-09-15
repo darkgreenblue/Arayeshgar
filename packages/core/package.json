@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@arayeshgar/db": "workspace:*",
+    "@arayeshgar/themes": "workspace:*",
     "drizzle-orm": "^0.45.0",
     "jalaali-js": "^2.0.0",
     "pino": "^10.0.0",
