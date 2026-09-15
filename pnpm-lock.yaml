@@ -183,6 +183,9 @@ importers:
       '@arayeshgar/db':
         specifier: workspace:*
         version: link:../db
+      '@arayeshgar/themes':
+        specifier: workspace:*
+        version: link:../themes
       drizzle-orm:
         specifier: ^0.45.0
         version: 0.45.2(@libsql/client@0.18.0)(postgres@3.4.9)

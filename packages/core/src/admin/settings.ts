@@ -2,6 +2,7 @@ import { randomInt } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { tenants, users, type Db, type Tenant } from "@arayeshgar/db";
+import { isThemeKey } from "@arayeshgar/themes";
 import { hashPassword, verifyPassword } from "../auth/password";
 import { Errors } from "../errors/domain";
 import { bookingRulesSchema, brandingSchema, depositSettingsSchema } from "../tenant/config";
@@ -36,8 +37,11 @@ export async function updateBranding(db: Db, tenant: Tenant, input: unknown) {
 }
 
 export async function setTheme(db: Db, tenantId: string, theme: string) {
-  if (!["night-gold", "light-editorial", "bold-modern"].includes(theme))
-    throw Errors.validation("قالب نامعتبر است.");
+  // Was a hardcoded three-way list, disconnected from @arayeshgar/themes's own registry --
+  // adding a fourth ThemeKey there (night-portrait) did nothing here, so setTheme rejected it
+  // as "قالب نامعتبر است" even though the theme itself rendered fine. isThemeKey is the same
+  // check apps/web/src/themes/index.tsx uses to pick a renderer, so the two can no longer drift.
+  if (!isThemeKey(theme)) throw Errors.validation("قالب نامعتبر است.");
   await db.update(tenants).set({ theme, updatedAt: new Date() }).where(eq(tenants.id, tenantId));
 }
 
