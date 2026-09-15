@@ -87,7 +87,18 @@ module.exports = {
       // path, but it is the one that exists: verified against the real build output.
       script: "web/apps/web/server.js",
       cwd: HERE,
-      env: { PORT: "8800", HOSTNAME: "127.0.0.1" },
+      // **`HOSTNAME` is normally `127.0.0.1` — the only exception is ArvanCloud origin
+      // mode.** When `ARVAN_MODE=true` (from the `ARAYESHGAR_ARVAN_MODE` secret, written
+      // into `.env` under the shorter name to match `BASE_DOMAIN`/`DEMO_DOMAIN`),
+      // ArvanCloud's CDN edge needs to reach
+      // this port directly (no outbound-only tunnel like Cloudflare's), so it binds every
+      // interface instead. That alone would expose it to the whole internet; what actually
+      // keeps it closed to everyone but ArvanCloud is `tools/arvan-firewall.sh`, called
+      // from `deploy.yml` before this app (re)starts — see that script for why iptables
+      // and not ufw. The health check independently verifies that firewall rule exists
+      // before calling a deploy healthy, exactly like it independently verifies the
+      // loopback bind in every other mode.
+      env: { PORT: "8800", HOSTNAME: process.env.ARVAN_MODE === "true" ? "0.0.0.0" : "127.0.0.1" },
       // One process: SQLite has a single writer, so a second instance would only queue
       // behind the first while doubling the memory.
       instances: 1,
@@ -119,23 +130,33 @@ module.exports = {
       // The only way in from the internet. Nothing here opens a port: cloudflared makes an
       // outbound connection to Cloudflare's edge and forwards requests back to loopback.
       //
-      // **This is a quick tunnel, not a named one, and that is a deliberate downgrade.**
-      // A named tunnel needs a domain sitting in a Cloudflare zone, and the free-domain
-      // route fell over: DigitalPlat now asks for registry and billing details the owner
-      // does not have. A quick tunnel needs no domain, no Cloudflare account, and no card —
-      // which also sidesteps signing up to Cloudflare from Iran. The cost is that Cloudflare
-      // assigns the `*.trycloudflare.com` hostname during startup, so **the URL changes
-      // every time this process restarts**; the deploy captures it into
-      // `data/demo-url.txt` and `Ops → status` prints it, so the current link is always
-      // findable rather than guessed. Cloudflare caps quick tunnels at 200 concurrent
-      // requests and documents them as test-only, which is fine for showing one barber a
-      // demo and is not fine for a paying customer — that is when a `.ir` domain and a
-      // named tunnel replace this.
+      // **Named tunnel when the owner's own domain is configured, quick tunnel otherwise.**
+      // A named tunnel needs a domain sitting in a Cloudflare zone plus a tunnel token from
+      // the Cloudflare dashboard (`CLOUDFLARE_TUNNEL_TOKEN`, per §4 PLATFORM.md) — once that
+      // secret exists, `cloudflared` reads it from the environment (never a CLI arg: this
+      // process's argv is visible to every user on the shared box via `ps`) and connects to
+      // the tunnel that was named in the dashboard, whose public hostname was pointed at
+      // `http://localhost:8800` there. That hostname is fixed by the owner, not assigned by
+      // Cloudflare, so it survives restarts — unlike the fallback below.
+      //
+      // Without that secret, this falls back to a quick tunnel: no domain, no Cloudflare
+      // account, no card needed. The cost is that Cloudflare assigns the
+      // `*.trycloudflare.com` hostname during startup, so **the URL changes every time this
+      // process restarts**; the deploy captures it into `data/demo-url.txt` and
+      // `Ops → status` prints it, so the current link is always findable rather than
+      // guessed. Cloudflare caps quick tunnels at 200 concurrent requests and documents them
+      // as test-only, which is fine for showing one barber a demo and is not fine for a
+      // paying customer.
       name: "arayeshgar-tunnel",
       script: "cloudflared",
       // `--no-autoupdate`: a self-update would restart the process, and every restart of
-      // this process silently changes the demo URL.
-      args: "tunnel --no-autoupdate --url http://127.0.0.1:8800",
+      // this quick-tunnel fallback silently changes the demo URL.
+      args: process.env.CLOUDFLARE_TUNNEL_TOKEN
+        ? "tunnel --no-autoupdate run"
+        : "tunnel --no-autoupdate --url http://127.0.0.1:8800",
+      env: process.env.CLOUDFLARE_TUNNEL_TOKEN
+        ? { TUNNEL_TOKEN: process.env.CLOUDFLARE_TUNNEL_TOKEN }
+        : {},
       cwd: HERE,
       instances: 1,
       exec_mode: "fork",

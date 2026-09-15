@@ -26,6 +26,7 @@ on:
             admin-remove,
             bot-check,
             bind-demo-domain,
+            fw-status,
           ]
         required: true
       lines:
@@ -496,6 +497,26 @@ jobs:
             print()
             print("  ✅ = این ردیف رسید می‌گیرد. اگر هیچ ✅ نیست، رزروِ دمو به هیچ تلگرامی نمی‌رود.")
             PY
+                ;;
+
+              fw-status)
+                # فقط‌خواندنی — عمداً هیچ ufw/iptables را عوض نمی‌کند. قبل از هر تغییرِ
+                # فایروال روی این سرورِ مشترک، اول باید دید همین الان چه قانونی زنده است؛
+                # کورکورانه `ufw enable` زدن می‌تواند SSH خودِ همین Actions را هم ببندد و
+                # کل سرور را برای همه‌ی محصولات مالک غیرقابل‌دسترس کند.
+                echo "── ufw ──"
+                if command -v ufw >/dev/null 2>&1; then
+                  echo "نصب است."
+                  sudo ufw status verbose 2>&1 || echo "(status اجرا نشد)"
+                else
+                  echo "نصب نیست."
+                fi
+                echo
+                echo "── iptables INPUT chain ──"
+                sudo iptables -L INPUT -n -v --line-numbers 2>&1 || echo "(خوانده نشد)"
+                echo
+                echo "── پورت‌های گوش‌داده‌شده (کلِ سرور) ──"
+                ss -ltnp 2>/dev/null || ss -ltn
                 ;;
 
               bind-demo-domain)
