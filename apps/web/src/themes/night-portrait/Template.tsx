@@ -1,15 +1,16 @@
 /**
  * Theme D «شب و پرتره»: built for a solo barber whose trust signal is his own work, not a
  * shopfront — an Instagram-led business where the photo grid IS the pitch. Two structural
- * differences from «شب و طلا» (which shares the same dark paper band): the hero is a contained,
- * framed portrait next to a typographic identity block instead of a full-bleed stretched photo,
- * and the gallery moves directly after the hero — before services, before about — because for
- * this kind of client the work sells the booking, not the other way around. See
+ * differences from «شب و طلا» (which shares the same dark paper band): the hero is a single
+ * typographic moment (Aceternity's "Lamp" component, see components/ui/lamp.tsx) rather than a
+ * hero photo, and the gallery moves directly after it — before services, before about — because
+ * for this kind of client the work sells the booking, not the other way around. See
  * apps/web/src/themes/tenant-directions/reza-hosseini.md for the brief this was built from.
  */
 import Link from "next/link";
 import type { SiteContent } from "@arayeshgar/core";
 import type { ShellProps } from "..";
+import { NightPortraitHero } from "./Hero";
 import {
   BookButton,
   Contact,
@@ -47,34 +48,10 @@ export function NightPortrait({ content }: { content: SiteContent }) {
   return (
     <NightPortraitShell tenant={content.tenant}>
       <main className="pb-24 sm:pb-0">
-        <section className="mx-auto grid max-w-5xl gap-10 px-4 pb-14 pt-10 sm:grid-cols-[1.1fr_0.9fr] sm:items-center sm:pt-20">
-          <div>
-            <h1 className="font-heading text-5xl font-extrabold leading-[1.15] sm:text-6xl">
-              {b.displayName}
-            </h1>
-            <p className="mt-4 max-w-md text-xl leading-relaxed opacity-90">
-              اصلاح موی مردانه در {b.address?.split("،").pop()?.trim() || "تهران"}
-            </p>
-            <div className="mt-8 flex flex-wrap items-center gap-4">
-              <BookButton className="px-8 py-3" />
-              <a
-                href="#gallery"
-                className="text-sm font-medium opacity-75 underline underline-offset-8 transition hover:opacity-100"
-              >
-                دیدن نمونه‌کارها
-              </a>
-            </div>
-          </div>
-          {b.heroImageUrl && (
-            <div className="rounded-3xl border border-[var(--brand)]/25 p-2">
-              <img
-                src={b.heroImageUrl}
-                alt=""
-                className="aspect-[4/5] w-full rounded-2xl object-cover"
-              />
-            </div>
-          )}
-        </section>
+        <NightPortraitHero
+          displayName={b.displayName}
+          neighbourhood={b.address?.split("،").pop()?.trim() || "تهران"}
+        />
 
         <Section id="gallery" title="نمونه‌کارها">
           <Gallery content={content} variant="portrait" />

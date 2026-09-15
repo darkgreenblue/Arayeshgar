@@ -19,12 +19,15 @@
     "@fontsource-variable/vazirmatn": "5.3.0",
     "@fontsource/estedad": "^5.3.0",
     "@fontsource/vazirmatn": "^5.3.0",
+    "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.0",
     "iron-session": "^9.0.1",
+    "motion": "^12.4.0",
     "next": "^16.3.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "sahel-font": "^3.4.0",
+    "tailwind-merge": "^2.6.0",
     "zod": "^4.5.4"
   },
   "devDependencies": {
