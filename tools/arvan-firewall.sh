@@ -50,10 +50,21 @@ CIDRS=(
 )
 
 # Wipe only our own port-8800 rules (never touches anything on another port).
+while sudo iptables -D INPUT -i lo -p tcp --dport "$PORT" -j ACCEPT 2>/dev/null; do :; done
 while sudo iptables -D INPUT -p tcp --dport "$PORT" -j DROP 2>/dev/null; do :; done
 for cidr in "${CIDRS[@]}"; do
   while sudo iptables -D INPUT -p tcp --dport "$PORT" -s "$cidr" -j ACCEPT 2>/dev/null; do :; done
 done
+
+# **Loopback first, and this is not optional.** The health check (and anything else on the
+# box) reaches this port via `curl http://127.0.0.1:8800`, which is still INPUT-chain
+# traffic in Linux -- it is not exempt just because it never left the machine. The first
+# real deploy with this script proved it the hard way: 14 ACCEPT rules plus a catch-all
+# DROP, verified correct in the log, and the app was reachable from nowhere at all --
+# including 127.0.0.1 -- because loopback matched no `-s <cidr>` rule and fell through to
+# the DROP. `-i lo` scopes this to the loopback interface only, so it does not also open
+# the port to spoofed source IPs arriving from the real network.
+sudo iptables -A INPUT -i lo -p tcp --dport "$PORT" -j ACCEPT
 
 # Rebuild in the correct order: every allowed range first, the catch-all DROP last.
 for cidr in "${CIDRS[@]}"; do
