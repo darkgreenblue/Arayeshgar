@@ -119,23 +119,33 @@ module.exports = {
       // The only way in from the internet. Nothing here opens a port: cloudflared makes an
       // outbound connection to Cloudflare's edge and forwards requests back to loopback.
       //
-      // **This is a quick tunnel, not a named one, and that is a deliberate downgrade.**
-      // A named tunnel needs a domain sitting in a Cloudflare zone, and the free-domain
-      // route fell over: DigitalPlat now asks for registry and billing details the owner
-      // does not have. A quick tunnel needs no domain, no Cloudflare account, and no card —
-      // which also sidesteps signing up to Cloudflare from Iran. The cost is that Cloudflare
-      // assigns the `*.trycloudflare.com` hostname during startup, so **the URL changes
-      // every time this process restarts**; the deploy captures it into
-      // `data/demo-url.txt` and `Ops → status` prints it, so the current link is always
-      // findable rather than guessed. Cloudflare caps quick tunnels at 200 concurrent
-      // requests and documents them as test-only, which is fine for showing one barber a
-      // demo and is not fine for a paying customer — that is when a `.ir` domain and a
-      // named tunnel replace this.
+      // **Named tunnel when the owner's own domain is configured, quick tunnel otherwise.**
+      // A named tunnel needs a domain sitting in a Cloudflare zone plus a tunnel token from
+      // the Cloudflare dashboard (`CLOUDFLARE_TUNNEL_TOKEN`, per §4 PLATFORM.md) — once that
+      // secret exists, `cloudflared` reads it from the environment (never a CLI arg: this
+      // process's argv is visible to every user on the shared box via `ps`) and connects to
+      // the tunnel that was named in the dashboard, whose public hostname was pointed at
+      // `http://localhost:8800` there. That hostname is fixed by the owner, not assigned by
+      // Cloudflare, so it survives restarts — unlike the fallback below.
+      //
+      // Without that secret, this falls back to a quick tunnel: no domain, no Cloudflare
+      // account, no card needed. The cost is that Cloudflare assigns the
+      // `*.trycloudflare.com` hostname during startup, so **the URL changes every time this
+      // process restarts**; the deploy captures it into `data/demo-url.txt` and
+      // `Ops → status` prints it, so the current link is always findable rather than
+      // guessed. Cloudflare caps quick tunnels at 200 concurrent requests and documents them
+      // as test-only, which is fine for showing one barber a demo and is not fine for a
+      // paying customer.
       name: "arayeshgar-tunnel",
       script: "cloudflared",
       // `--no-autoupdate`: a self-update would restart the process, and every restart of
-      // this process silently changes the demo URL.
-      args: "tunnel --no-autoupdate --url http://127.0.0.1:8800",
+      // this quick-tunnel fallback silently changes the demo URL.
+      args: process.env.CLOUDFLARE_TUNNEL_TOKEN
+        ? "tunnel --no-autoupdate run"
+        : "tunnel --no-autoupdate --url http://127.0.0.1:8800",
+      env: process.env.CLOUDFLARE_TUNNEL_TOKEN
+        ? { TUNNEL_TOKEN: process.env.CLOUDFLARE_TUNNEL_TOKEN }
+        : {},
       cwd: HERE,
       instances: 1,
       exec_mode: "fork",

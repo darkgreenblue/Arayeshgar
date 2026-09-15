@@ -148,6 +148,8 @@ jobs:
           DEMO_TELEGRAM_BOT_TOKEN: ${{ secrets.ARAYESHGAR_DEMO_BOT_TOKEN }}
           DEMO_BALE_BOT_TOKEN: ${{ secrets.ARAYESHGAR_DEMO_BALE_TOKEN }}
           BASE_DOMAIN: ${{ secrets.ARAYESHGAR_BASE_DOMAIN }}
+          CLOUDFLARE_TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
+          DEMO_DOMAIN: ${{ secrets.ARAYESHGAR_DEMO_DOMAIN }}
         run: |
           # نامِ سکرتِ خالی چاپ می‌شود، مقدارش هرگز (قاعده‌ی ۵).
           if [ -z "$SESSION_SECRET" ]; then
@@ -162,10 +164,18 @@ jobs:
             echo "   یک رشته‌ی تصادفی بلندتر بگذارید."
             exit 1
           fi
-          for n in OWNER_TELEGRAM_ID DEMO_TELEGRAM_BOT_TOKEN DEMO_BALE_BOT_TOKEN BASE_DOMAIN; do
+          for n in OWNER_TELEGRAM_ID DEMO_TELEGRAM_BOT_TOKEN DEMO_BALE_BOT_TOKEN BASE_DOMAIN \
+                   CLOUDFLARE_TUNNEL_TOKEN DEMO_DOMAIN; do
             eval "v=\$$n"
             [ -n "$v" ] || echo "⚠️  سکرتِ خالی (اختیاری، محصول بی‌آن هم بالا می‌آید): $n"
           done
+          # این دو تا هر دو باید ست باشند یا هیچ‌کدام — یکی بدون دیگری یعنی تونلِ نام‌دار
+          # نیمه‌پیکربندی‌شده: یا توکن هست و دامنه‌ای برای ثبتش نیست، یا برعکس.
+          if { [ -n "$CLOUDFLARE_TUNNEL_TOKEN" ] && [ -z "$DEMO_DOMAIN" ]; } || \
+             { [ -z "$CLOUDFLARE_TUNNEL_TOKEN" ] && [ -n "$DEMO_DOMAIN" ]; }; then
+            echo "❌ CLOUDFLARE_TUNNEL_TOKEN و ARAYESHGAR_DEMO_DOMAIN باید هر دو ست باشند یا هیچ‌کدام"
+            exit 1
+          fi
 
           DIR="/home/$SERVER_USER/$PROJ"
           umask 077
@@ -186,6 +196,8 @@ jobs:
           DEMO_TELEGRAM_BOT_TOKEN=$DEMO_TELEGRAM_BOT_TOKEN
           DEMO_BALE_BOT_TOKEN=$DEMO_BALE_BOT_TOKEN
           WORKER_INTERVAL_SEC=30
+          CLOUDFLARE_TUNNEL_TOKEN=$CLOUDFLARE_TUNNEL_TOKEN
+          DEMO_DOMAIN=$DEMO_DOMAIN
           ENVFILE
           # فقط تعداد خطوط، هرگز محتوا.
           echo "‏.env ساخته شد ($(wc -l < "$RUNNER_TEMP/env") خط)"
@@ -292,40 +304,58 @@ jobs:
           URL=""
           case "$APPS" in
             *"$PROJ-tunnel"*)
-              # **تونل delete و از نو start می‌شود، نه restart.** دو دلیل: (الف) مسیر
-              # لاگ در `ecosystem.config.cjs` عوض شده و `reload` همیشه پیکربندی تازه‌ی
-              # stdio را اعمال نمی‌کند؛ (ب) آدرس quick tunnel در هر بالا آمدن عوض
-              # می‌شود، پس چیزی برای حفظ کردن وجود ندارد. فقط اپ خودمان، با نام صریح.
-              pm2 delete "$PROJ-tunnel" >/dev/null 2>&1 || true
-              # پاک کردن *همه‌ی* لاگ‌های تونل، از جمله پسوندهای آی‌دیِ اجراهای قبلی —
-              # وگرنه آدرسِ یک تونلِ مرده به‌عنوان آدرس فعلی برداشته می‌شود.
-              rm -f $TUN_GLOB
-              pm2 start ecosystem.config.cjs --only "$PROJ-tunnel" --update-env
-              for i in $(seq 1 30); do
-                URL="$(grep -ohE 'https://[a-z0-9-]+\.trycloudflare\.com' \
-                       $TUN_GLOB 2>/dev/null | tail -1)"
-                [ -n "$URL" ] && break
-                sleep 2
-              done
-              if [ -n "$URL" ]; then
-                printf '%s\n' "$URL" > "$DIR/data/demo-url.txt"
-                echo "🔗 آدرس دمو: $URL"
-              else
-                # قبلاً اینجا فقط یک ⚠️ بود و دیپلوی سبز می‌شد. اولین دیپلوی واقعی همین
-                # کار را کرد: هر ۱۶ گام سبز و **هیچ لینک دمویی وجود نداشت**. دمو کلِ
-                # چیزی است که این دیپلوی تحویل می‌دهد، پس نبودنش سبز نیست.
-                echo "❌ آدرس تونل در ۶۰ ثانیه پیدا نشد — یعنی لینک دمویی وجود ندارد."
-                echo "── تشخیص (به‌جای حدس زدن) ──"
-                echo "  محتوای $DIR/data/logs:"
-                ls -l "$DIR/data/logs" 2>/dev/null | tail -n +2 | sed 's/^/    /' \
-                  || echo "    (پوشه وجود ندارد)"
-                for f in $TUN_GLOB; do
-                  [ -f "$f" ] || continue
-                  echo "  $f — $(wc -c < "$f") بایت:"
-                  tail -n 25 "$f" 2>/dev/null | sed 's/^/    /'
+              if [ -n "$CLOUDFLARE_TUNNEL_TOKEN" ] && [ -n "$DEMO_DOMAIN" ]; then
+                # **تونلِ نام‌دار: هاست‌نیم ثابت است، نه چیزی که کلادفلر هنگام بالا آمدن
+                # بدهد.** مالک آن را یک‌بار در داشبورد کلادفلر روی همین دامنه تنظیم کرده،
+                # پس نیازی به کندن آدرس از لاگ نیست — فقط منتظر می‌مانیم پروسه بالا بیاید.
+                # `reload` (نه delete+start) کافی است چون هیچ آدرسی برای گم شدن نیست.
+                for i in $(seq 1 15); do
+                  st="$(pm2 jlist 2>/dev/null | node -e "
+                    const a=JSON.parse(require('fs').readFileSync(0,'utf8'));
+                    const p=a.find(x=>x.name==='$PROJ-tunnel');
+                    console.log(p?p.pm2_env.status:'missing');" 2>/dev/null)"
+                  [ "$st" = "online" ] && break
+                  sleep 2
                 done
-                pm2 describe "$PROJ-tunnel" 2>/dev/null \
-                  | grep -iE 'status|script|out log|error log|restarts|exec cwd' | sed 's/^/  /' || true
+                URL="https://$DEMO_DOMAIN"
+                printf '%s\n' "$URL" > "$DIR/data/demo-url.txt"
+                echo "🔗 دامنه‌ی ثابت (تونل نام‌دار): $URL (وضعیت پروسه: ${st:-نامعلوم})"
+              else
+                # **تونل delete و از نو start می‌شود، نه restart.** دو دلیل: (الف) مسیر
+                # لاگ در `ecosystem.config.cjs` عوض شده و `reload` همیشه پیکربندی تازه‌ی
+                # stdio را اعمال نمی‌کند؛ (ب) آدرس quick tunnel در هر بالا آمدن عوض
+                # می‌شود، پس چیزی برای حفظ کردن وجود ندارد. فقط اپ خودمان، با نام صریح.
+                pm2 delete "$PROJ-tunnel" >/dev/null 2>&1 || true
+                # پاک کردن *همه‌ی* لاگ‌های تونل، از جمله پسوندهای آی‌دیِ اجراهای قبلی —
+                # وگرنه آدرسِ یک تونلِ مرده به‌عنوان آدرس فعلی برداشته می‌شود.
+                rm -f $TUN_GLOB
+                pm2 start ecosystem.config.cjs --only "$PROJ-tunnel" --update-env
+                for i in $(seq 1 30); do
+                  URL="$(grep -ohE 'https://[a-z0-9-]+\.trycloudflare\.com' \
+                         $TUN_GLOB 2>/dev/null | tail -1)"
+                  [ -n "$URL" ] && break
+                  sleep 2
+                done
+                if [ -n "$URL" ]; then
+                  printf '%s\n' "$URL" > "$DIR/data/demo-url.txt"
+                  echo "🔗 آدرس دمو: $URL"
+                else
+                  # قبلاً اینجا فقط یک ⚠️ بود و دیپلوی سبز می‌شد. اولین دیپلوی واقعی همین
+                  # کار را کرد: هر ۱۶ گام سبز و **هیچ لینک دمویی وجود نداشت**. دمو کلِ
+                  # چیزی است که این دیپلوی تحویل می‌دهد، پس نبودنش سبز نیست.
+                  echo "❌ آدرس تونل در ۶۰ ثانیه پیدا نشد — یعنی لینک دمویی وجود ندارد."
+                  echo "── تشخیص (به‌جای حدس زدن) ──"
+                  echo "  محتوای $DIR/data/logs:"
+                  ls -l "$DIR/data/logs" 2>/dev/null | tail -n +2 | sed 's/^/    /' \
+                    || echo "    (پوشه وجود ندارد)"
+                  for f in $TUN_GLOB; do
+                    [ -f "$f" ] || continue
+                    echo "  $f — $(wc -c < "$f") بایت:"
+                    tail -n 25 "$f" 2>/dev/null | sed 's/^/    /'
+                  done
+                  pm2 describe "$PROJ-tunnel" 2>/dev/null \
+                    | grep -iE 'status|script|out log|error log|restarts|exec cwd' | sed 's/^/  /' || true
+                fi
               fi
               ;;
           esac
