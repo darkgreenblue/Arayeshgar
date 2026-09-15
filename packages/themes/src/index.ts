@@ -15,6 +15,11 @@ export const THEMES = {
     description: "رنگی، انیمیشن، چیدمان bento",
     defaultPrimary: "#6D28D9",
   },
+  "night-portrait": {
+    label: "شب و پرتره",
+    description: "تیره، نمونه‌کار در صدر، عکس‌محور",
+    defaultPrimary: "#7B85E0",
+  },
 } as const;
 export type ThemeKey = keyof typeof THEMES;
 export const THEME_KEYS = Object.keys(THEMES) as ThemeKey[];

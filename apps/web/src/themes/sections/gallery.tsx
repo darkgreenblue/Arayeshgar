@@ -11,17 +11,45 @@
  */
 import type { SiteContent } from "@arayeshgar/core";
 import { isEnabled } from "@arayeshgar/core/features/registry";
+import { cx } from "./primitives";
 
 export function Gallery({
   content,
   variant = "grid",
 }: {
   content: SiteContent;
-  variant?: "grid" | "editorial" | "bento";
+  variant?: "grid" | "editorial" | "bento" | "portrait";
 }) {
   if (!isEnabled(content.tenant, "gallery")) return null;
   const imgs = content.tenant.branding.gallery;
   if (!imgs.length) return null;
+
+  // "portrait" is the one variant that does not crop every photo to a square: a barber's work
+  // photos are shot vertical (a fade or a line-up needs the height), and forcing them into
+  // aspect-square loses exactly the detail that made them worth including. See the photography
+  // section of the barbershop-design skill -- "design a grid that wants 4:5 and 3:4 instead of
+  // fighting them". The second photo (index 1) gets a wider feature slot on desktop rather than
+  // the first, so the very top-right tile a visitor's eye lands on first (RTL reading order)
+  // still opens on a normal portrait crop instead of a stretched one.
+  if (variant === "portrait") {
+    return (
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        {imgs.map((src, i) => (
+          <img
+            key={i}
+            src={src}
+            alt=""
+            loading="lazy"
+            className={cx(
+              "w-full rounded-2xl object-cover aspect-[4/5]",
+              i === 1 && "sm:col-span-2 sm:aspect-[16/10]",
+            )}
+          />
+        ))}
+      </div>
+    );
+  }
+
   const cls =
     variant === "bento"
       ? "grid grid-cols-2 gap-2 sm:grid-cols-4 [&>*:first-child]:col-span-2 [&>*:first-child]:row-span-2"

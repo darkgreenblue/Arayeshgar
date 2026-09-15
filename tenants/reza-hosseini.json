@@ -3,7 +3,7 @@
   "displayName": "رضا حسینی",
   "mode": "solo",
   "tagline": "متخصص اصلاح موی مردانه — نیاوران",
-  "about": "رضا حسینی، آرایشگر مردانه در نیاوران با نزدیک به ۸ هزار دنبال‌کننده در اینستاگرام. تا امروز رزرو فقط تلفنی یا از دایرکت بوده — از این پس آنلاین هم هست.",
+  "about": "رضا حسینی، آرایشگر مردانه در نیاوران با نزدیک به ۸ هزار دنبال‌کننده در اینستاگرام. تا امروز نوبت‌گیری فقط با تماس یا دایرکت بوده؛ از این به بعد از همین سایت هم رزرو آنلاین ممکن است.",
   "instagram": "rezahosseini_barber",
   "address": "تهران، نیاوران",
   "logoUrl": "/tenants/reza-hosseini/avatar.png",
@@ -44,7 +44,7 @@
     { "weekday": 5, "startMin": 600, "endMin": 1200 }
   ],
   "deposit": { "enabled": false },
-  "theme": "night-gold",
+  "theme": "night-portrait",
   "primaryColor": "#7B85E0",
   "fontHeading": "estedad",
   "fontBody": "vazirmatn",

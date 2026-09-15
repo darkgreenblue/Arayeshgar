@@ -1,0 +1,17 @@
+{
+  "_comment": "One entry per tenant that has had real design attention (not just onboarding defaults). Append, never overwrite -- the point is to prove the archetype/palette/display axes actually vary across tenants over time. See SKILL.md 'Structure must vary, not just colour'.",
+  "tenants": [
+    {
+      "slug": "reza-hosseini",
+      "themeKey": "night-portrait",
+      "archetype": "portrait-led: gallery immediately after hero, before services and about",
+      "paperBand": "dark",
+      "paperBandHex": "#0b0b0f",
+      "displayStrategy": "weight contrast (one face, Estedad, extrabold hero vs normal/medium body)",
+      "brandColor": "#7B85E0",
+      "brandColorSource": "sampled from the tenant's own Instagram profile photo, not chosen from a palette",
+      "notes": "First tenant to move off the original night-gold/light-editorial/bold-modern set. Built because his business is Instagram-led (~8k followers) so proof-of-work photography needed to lead, not sit mid-page. See apps/web/src/themes/tenant-directions/reza-hosseini.md for the full brief and rationale.",
+      "date": "2026-09-15"
+    }
+  ]
+}

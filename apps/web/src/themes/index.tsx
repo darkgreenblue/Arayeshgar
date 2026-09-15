@@ -5,6 +5,7 @@ import { isThemeKey, type ThemeKey } from "@arayeshgar/themes";
 import { NightGold, NightGoldShell } from "./night-gold/Template";
 import { LightEditorial, LightEditorialShell } from "./light-editorial/Template";
 import { BoldModern, BoldModernShell } from "./bold-modern/Template";
+import { NightPortrait, NightPortraitShell } from "./night-portrait/Template";
 
 export type ShellProps = { tenant: Tenant; title?: string; children: ReactNode };
 export type Template = (props: { content: SiteContent }) => ReactNode;
@@ -18,6 +19,7 @@ const REGISTRY: Record<ThemeKey, { Template: Template; Shell: Shell }> = {
   "night-gold": { Template: NightGold, Shell: NightGoldShell },
   "light-editorial": { Template: LightEditorial, Shell: LightEditorialShell },
   "bold-modern": { Template: BoldModern, Shell: BoldModernShell },
+  "night-portrait": { Template: NightPortrait, Shell: NightPortraitShell },
 };
 
 export function themeKey(v: string): ThemeKey {
