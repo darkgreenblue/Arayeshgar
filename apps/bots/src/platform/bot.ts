@@ -166,9 +166,22 @@ export async function safeAnswerCallback(ctx: BotCtx, text?: string): Promise<vo
  */
 export async function replyOrEdit(ctx: BotCtx, text: string, keyboard?: unknown): Promise<void> {
   const markup = keyboard ? { reply_markup: keyboard as never } : {};
-  if (ctx.callbackQuery?.message && ctx.caps.editMessage) {
+  const message = ctx.callbackQuery?.message;
+  if (message && ctx.caps.editMessage) {
     try {
-      await ctx.editMessageText(text, markup);
+      // Receipt-review notifications are photos. Telegram does not allow `editMessageText`
+      // on a photo message, so the old code fell back to an unrelated new message and left
+      // the original approve/reject controls visible. Editing its caption both shows the
+      // result where the admin tapped and removes those controls, making the action obvious
+      // and preventing a misleading second tap.
+      const editMarkup = keyboard
+        ? { reply_markup: keyboard as never }
+        : { reply_markup: { inline_keyboard: [] } as never };
+      if ("photo" in message && Array.isArray(message.photo)) {
+        await ctx.editMessageCaption({ caption: text, ...editMarkup });
+      } else {
+        await ctx.editMessageText(text, editMarkup);
+      }
       return;
     } catch (err) {
       logger.debug(

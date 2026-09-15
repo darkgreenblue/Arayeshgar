@@ -431,6 +431,13 @@ jobs:
           if ! node "$DIR/bots/bootstrap-tenants.js" "$DIR/tenants"; then
             echo "⚠️  bootstrap-tenants شکست خورد ⇒ لاگ بالا را برای جزئیات ببینید"
           fi
+
+          # رضا حسینی تنها دموی فعال این است: مستأجر قبلاً ساخته‌شده را هم با قراردادِ
+          # دمو هماهنگ می‌کند (بیعانه و گیرنده‌های ادمین). bootstrap-tenants عمداً فقط
+          # ایجاد می‌کند و tenant موجود را تغییر نمی‌دهد، پس این گام لازم است.
+          if ! node "$DIR/bots/bootstrap-reza-demo.js"; then
+            echo "⚠️  bootstrap-reza-demo شکست خورد ⇒ بیعانه/اعلان‌های دمو را در Ops بررسی کنید"
+          fi
           REMOTE
 
       - name: health check, and roll back if it fails

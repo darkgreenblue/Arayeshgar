@@ -15,6 +15,7 @@ import type { Bot } from "grammy";
 import type { Platform } from "@arayeshgar/db";
 import { logger } from "@arayeshgar/core";
 import type { BotCtx } from "./bot";
+import { installSerialDispatch } from "./dispatch";
 
 const running = new Map<string, { bot: Bot<BotCtx>; token: string }>();
 const key = (tenantId: string, platform: Platform) => `${tenantId}:${platform}`;
@@ -43,6 +44,12 @@ export async function startPolling(
   await bot.api.deleteWebhook({ drop_pending_updates: true }).catch((err: unknown) => {
     logger.debug({ tenantId, platform, err: String(err) }, "deleteWebhook before polling failed");
   });
+
+  // A slow receipt download must not hold every other Telegram user hostage. This keeps
+  // updates from the same person ordered, while letting independent customers proceed.
+  // It is intentionally installed only for long polling: webhook HTTP responses must wait
+  // for their own handler to finish.
+  installSerialDispatch(bot);
 
   running.set(k, { bot, token });
   // start() only settles when the bot stops, so it is deliberately not awaited.
