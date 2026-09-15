@@ -65,3 +65,79 @@ select,
 textarea {
   font: inherit;
 }
+
+/* One orchestrated visual moment for the night-portrait archetype, not scattered per-card
+ * effects (the generic-page tell the frontend-design skill warns against). A slow-drifting
+ * glow field behind the hero and a one-time "lamp" reveal on the headline -- both pure CSS,
+ * no animation library, and both inert under prefers-reduced-motion. `.np-glow-field` and
+ * `.np-lamp-reveal` are the only consumers; nothing else in the app references these classes. */
+@keyframes np-drift {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(3%, -4%) scale(1.08);
+  }
+}
+@keyframes np-lamp-in {
+  from {
+    opacity: 0;
+    filter: blur(12px);
+    transform: translateY(-8px) scaleX(0.85);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateY(0) scaleX(1);
+  }
+}
+@keyframes np-ring-pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 45px 2px color-mix(in srgb, var(--brand) 55%, transparent),
+      0 0 90px 12px color-mix(in srgb, var(--brand) 20%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 0 65px 10px color-mix(in srgb, var(--brand) 70%, transparent),
+      0 0 130px 24px color-mix(in srgb, var(--brand) 30%, transparent);
+  }
+}
+.np-glow-field {
+  pointer-events: none;
+  position: absolute;
+  inset: -20% -10%;
+  z-index: -1;
+  background:
+    radial-gradient(
+      45% 55% at 20% 30%,
+      color-mix(in srgb, var(--brand) 85%, transparent),
+      transparent 72%
+    ),
+    radial-gradient(40% 50% at 82% 15%, rgba(236, 72, 180, 0.55), transparent 72%),
+    radial-gradient(
+      50% 60% at 68% 80%,
+      color-mix(in srgb, var(--brand) 60%, transparent),
+      transparent 72%
+    );
+  filter: blur(60px) saturate(160%);
+  opacity: 0.85;
+}
+.np-ring {
+  box-shadow:
+    0 0 45px 2px color-mix(in srgb, var(--brand) 55%, transparent),
+    0 0 90px 12px color-mix(in srgb, var(--brand) 20%, transparent);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .np-glow-field {
+    animation: np-drift 14s ease-in-out infinite;
+  }
+  .np-lamp-reveal {
+    animation: np-lamp-in 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .np-ring {
+    animation: np-ring-pulse 3.6s ease-in-out infinite;
+  }
+}

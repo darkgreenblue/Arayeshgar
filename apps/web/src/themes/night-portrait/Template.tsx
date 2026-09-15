@@ -47,8 +47,14 @@ export function NightPortrait({ content }: { content: SiteContent }) {
   return (
     <NightPortraitShell tenant={content.tenant}>
       <main className="pb-24 sm:pb-0">
-        <section className="mx-auto grid max-w-5xl gap-10 px-4 pb-14 pt-10 sm:grid-cols-[1.1fr_0.9fr] sm:items-center sm:pt-20">
-          <div>
+        {/* The one deliberate "premium" moment on the page (see the skill's own note that a
+         * single orchestrated effect reads as intentional where scattered per-card motion
+         * reads as generic): a slow-drifting glow field in the tenant's own brand colour behind
+         * the hero, and a one-time light-reveal on the headline. Both pure CSS (see globals.css
+         * .np-*), no animation library, inert under prefers-reduced-motion. */}
+        <section className="relative isolate mx-auto grid max-w-5xl gap-10 overflow-hidden px-4 pb-14 pt-10 sm:grid-cols-[1.1fr_0.9fr] sm:items-center sm:pt-20">
+          <div className="np-glow-field" aria-hidden />
+          <div className="np-lamp-reveal">
             <h1 className="font-heading text-5xl font-extrabold leading-[1.15] sm:text-6xl">
               {b.displayName}
             </h1>
@@ -66,7 +72,7 @@ export function NightPortrait({ content }: { content: SiteContent }) {
             </div>
           </div>
           {b.heroImageUrl && (
-            <div className="rounded-3xl border border-[var(--brand)]/25 p-2">
+            <div className="np-ring rounded-3xl border border-[var(--brand)]/25 p-2">
               <img
                 src={b.heroImageUrl}
                 alt=""

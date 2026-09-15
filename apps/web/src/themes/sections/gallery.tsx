@@ -41,7 +41,8 @@ export function Gallery({
             alt=""
             loading="lazy"
             className={cx(
-              "w-full rounded-2xl object-cover aspect-[4/5]",
+              "w-full rounded-2xl object-cover aspect-[4/5] transition duration-300",
+              "hover:scale-[1.03] hover:shadow-[0_0_36px_-6px_var(--brand)]",
               i === 1 && "sm:col-span-2 sm:aspect-[16/10]",
             )}
           />
