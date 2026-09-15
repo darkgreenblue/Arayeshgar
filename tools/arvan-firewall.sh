@@ -51,11 +51,18 @@ CIDRS=(
 
 # Wipe only our own port-8800 rules (never touches anything on another port).
 while sudo iptables -D INPUT -p tcp --dport "$PORT" -j DROP 2>/dev/null; do :; done
+while sudo iptables -D INPUT -i lo -p tcp --dport "$PORT" -j ACCEPT 2>/dev/null; do :; done
 for cidr in "${CIDRS[@]}"; do
   while sudo iptables -D INPUT -p tcp --dport "$PORT" -s "$cidr" -j ACCEPT 2>/dev/null; do :; done
 done
 
-# Rebuild in the correct order: every allowed range first, the catch-all DROP last.
+# Rebuild in the correct order: loopback first, then every allowed range, the catch-all
+# DROP last. The DROP rule matches by destination port alone (no `-s`), so without this it
+# also swallows 127.0.0.1 traffic -- which is exactly what deploy.yml's own health check
+# uses right after this script runs, on every single deploy. Found by that health check
+# failing and rolling back reproducibly (~150s of hung curl retries against a port that was
+# silently dropping every packet), not by inspection.
+sudo iptables -A INPUT -i lo -p tcp --dport "$PORT" -j ACCEPT
 for cidr in "${CIDRS[@]}"; do
   sudo iptables -A INPUT -p tcp --dport "$PORT" -s "$cidr" -j ACCEPT
 done
