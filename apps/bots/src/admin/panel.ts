@@ -144,7 +144,7 @@ const adminKeyboard = () =>
  * Nothing downstream needs to know the difference: `can()` already grants platform_admin
  * everything and `visibleStaffIds` already returns "all staff" for them.
  */
-async function adminUser(db: Db, ctx: BotCtx): Promise<User | null> {
+export async function adminUser(db: Db, ctx: BotCtx): Promise<User | null> {
   const chatId = ctx.chat?.id;
   if (chatId == null) return null;
   const col = ctx.platform === "telegram" ? users.telegramChatId : users.baleChatId;

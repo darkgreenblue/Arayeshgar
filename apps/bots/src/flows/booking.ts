@@ -39,6 +39,7 @@ import {
 import { replyOrEdit, safeAnswerCallback, type BotCtx } from "../platform/bot";
 import { contactKeyboard, grid, removeKeyboard, toInlineKeyboard } from "../platform/keyboard";
 import { clearState, getState, setState } from "./state";
+import { adminUser } from "../admin/panel";
 
 const ANY = "any";
 
@@ -300,6 +301,10 @@ async function finalize(
   if (!svc) return void (await ctx.reply("این خدمت دیگر در دسترس نیست. /book را بزنید."));
   const stf = await resolveStaff(db, ctx.tenant, input.stfShort);
   const platformUserId = String(ctx.from?.id);
+  // An admin testing the real /book flow through their own bot chat must not trip the
+  // anti-abuse daily cap on their own phone number -- everything else (deposit prompt,
+  // pending status) still behaves exactly like a genuine customer booking.
+  const admin = await adminUser(db, ctx);
   try {
     const r = await createBooking(db, {
       tenant: ctx.tenant,
@@ -309,6 +314,7 @@ async function finalize(
       customer: { name: input.name, phone: input.phone },
       source: ctx.platform,
       identity: { platform: ctx.platform, platformUserId },
+      skipAbuseLimits: admin != null,
     });
     logger.info(
       { tenantId: ctx.tenant.id, platform: ctx.platform, bookingId: r.bookingId },

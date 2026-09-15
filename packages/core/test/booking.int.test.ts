@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { bookings, notificationOutbox, payments } from "@arayeshgar/db";
+import { bookings, notificationOutbox, payments, tenants } from "@arayeshgar/db";
 import { createBooking } from "../src/booking/create";
 import {
   approveReceipt,
@@ -64,6 +64,50 @@ describe("booking engine (SQLite)", () => {
     expect(starts).toContain(tomorrowAt(10, 30).getTime());
     const days = await availableDays(db, f.tenant, { staffId: f.staffId, serviceId: f.serviceId });
     expect(days.length).toBeGreaterThan(10);
+  });
+
+  it("skipAbuseLimits bypasses the daily cap but leaves deposit/status behavior untouched", async () => {
+    // No deposit, auto-confirm: every booking lands on "confirmed" so only the daily cap
+    // (not the separate "one active unpaid booking" cap) is in play here.
+    const f = await fx();
+    await db
+      .update(tenants)
+      .set({ bookingRules: { ...f.tenant.bookingRules, maxBookingsPerPhonePerDay: 1 } })
+      .where(eq(tenants.id, f.tenant.id));
+    const tenant = (await db.query.tenants.findFirst({ where: eq(tenants.id, f.tenant.id) }))!;
+    const phone = "09121110000";
+
+    const first = await createBooking(db, {
+      tenant,
+      staffId: f.staffId,
+      serviceId: f.serviceId,
+      startAt: tomorrowAt(9),
+      customer: { name: "ادمین", phone },
+      source: "telegram",
+    });
+    expect(first.status).toBe("confirmed");
+
+    await expect(
+      createBooking(db, {
+        tenant,
+        staffId: f.staffId,
+        serviceId: f.serviceId,
+        startAt: tomorrowAt(9, 30),
+        customer: { name: "ادمین", phone },
+        source: "telegram",
+      }),
+    ).rejects.toMatchObject({ code: "DAILY_LIMIT_REACHED" });
+
+    const bypassed = await createBooking(db, {
+      tenant,
+      staffId: f.staffId,
+      serviceId: f.serviceId,
+      startAt: tomorrowAt(10),
+      customer: { name: "ادمین", phone },
+      source: "telegram",
+      skipAbuseLimits: true,
+    });
+    expect(bypassed.status).toBe("confirmed"); // status logic untouched, only the cap was skipped
   });
 
   it("auto-confirms without deposit and notifies linked admins via the outbox", async () => {
