@@ -33,8 +33,7 @@ interface BlurFadeProps extends MotionProps {
   blur?: string;
 }
 
-const getFilter = (v: Variants[string]) =>
-  typeof v === "function" ? undefined : v.filter;
+const getFilter = (v: Variants[string]) => (typeof v === "function" ? undefined : v.filter);
 
 export function BlurFade({
   children,
