@@ -42,6 +42,13 @@ export type CreateBookingInput = {
   now?: Date;
   /** admin-created bookings skip abuse limits and are confirmed immediately */
   byAdminUserId?: string;
+  /**
+   * Skips only the daily/active-booking caps (unlike `byAdminUserId`, deposit and
+   * auto-confirm behave exactly as they would for a real customer). For an admin
+   * testing the real booking flow through their own bot chat, where "this chat is an
+   * admin" is known but the booking itself must look and behave like a genuine one.
+   */
+  skipAbuseLimits?: boolean;
 };
 
 export type CreateBookingResult = {
@@ -74,7 +81,9 @@ export async function createBooking(
       input.identity.platformUserId,
     );
 
-  if (!input.byAdminUserId) await assertAbuseLimits(db, tenant, customer.id, rules, now);
+  if (!input.byAdminUserId && !input.skipAbuseLimits) {
+    await assertAbuseLimits(db, tenant, customer.id, rules, now);
+  }
 
   const candidates =
     input.staffId === "any"
