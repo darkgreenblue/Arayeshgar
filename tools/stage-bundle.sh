@@ -81,6 +81,15 @@ cp "$ROOT/ecosystem.config.cjs" "$OUT/ecosystem.config.cjs"
 # (Reza Hosseini's is the first) in the same shape `pnpm tenant:create` accepts.
 [ -d "$ROOT/tenants" ] && cp -a "$ROOT/tenants" "$OUT/tenants"
 
+# ── server-side scripts ────────────────────────────────────────────────────────────────
+# deploy.yml runs `$DIR/tools/arvan-firewall.sh` on the server (both directly, when
+# ARVAN_MODE is on, and from a @reboot cron line it installs) -- but this directory was
+# never part of the staged tree, so the file existed in the repo and in CI's checkout yet
+# was never actually on the server. Exit 127 ("No such file or directory") on the very
+# first deploy that turned ARVAN_MODE on is what caught it.
+mkdir -p "$OUT/tools"
+cp "$ROOT/tools/arvan-firewall.sh" "$OUT/tools/arvan-firewall.sh"
+
 # ── prove the process list points at files that exist ──────────────────────────────────
 # Written because it did not: `ecosystem.config.cjs` said `web/server.js` while the
 # standalone entry is `web/apps/web/server.js`, and nothing in the pipeline disagreed.
