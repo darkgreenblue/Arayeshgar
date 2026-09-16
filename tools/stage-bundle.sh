@@ -37,7 +37,7 @@ cp -a "$ROOT/apps/web/.next/static" "$OUT/web/apps/web/.next/static"
 
 # ── bots ───────────────────────────────────────────────────────────────────────────────
 mkdir -p "$OUT/bots"
-for f in index migrate bootstrap-demo bootstrap-tenants; do
+for f in index migrate bootstrap-demo bootstrap-tenants bootstrap-reza-demo; do
   cp "$ROOT/apps/bots/dist/$f.js" "$OUT/bots/$f.js"
   # Source maps are worth their disk here: `Ops → errors` is the only view into a crash,
   # and a stack trace through 2 MB of bundled output is unreadable without them.
@@ -121,4 +121,4 @@ CHECK
 
 echo "✅ staged → $OUT"
 du -sh "$OUT" "$OUT/web" "$OUT/bots" 2>/dev/null || true
-echo "   one-shot entries: bots/migrate.js · bots/bootstrap-demo.js · bots/bootstrap-tenants.js"
+echo "   one-shot entries: bots/migrate.js · bots/bootstrap-demo.js · bots/bootstrap-tenants.js · bots/bootstrap-reza-demo.js"
