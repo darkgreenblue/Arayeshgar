@@ -18,10 +18,11 @@ export type RezaDemoResult =
   | { found: true; enabledDeposit: boolean; linkedAdmins: number };
 
 /**
- * Enables Reza's existing, valid card-to-card deposit and gives every active platform
- * Telegram admin a tenant-scoped manager row. The separate rows are intentional: they make
- * these people notification recipients while their platform-admin rows preserve their global
- * bot access. One Telegram account can therefore book as a customer and review as an admin.
+ * Enables Reza's existing, valid card-to-card deposit and the shared Telegram bot, then gives
+ * every active platform Telegram admin a tenant-scoped manager row. The separate rows are
+ * intentional: they make these people notification recipients while their platform-admin rows
+ * preserve their global bot access. One Telegram account can therefore book as a customer and
+ * review as an admin.
  */
 export async function reconcileRezaDemo(db: Db): Promise<RezaDemoResult> {
   const tenant = await db.query.tenants.findFirst({
@@ -57,17 +58,22 @@ export async function reconcileRezaDemo(db: Db): Promise<RezaDemoResult> {
   );
   const enabledDeposit =
     tenant.features.deposit !== true || tenant.depositSettings.enabled !== true;
-  if (enabledDeposit || faq.some((item, index) => item.a !== tenant.branding.faq[index]?.a)) {
+  const enabledTelegram = tenant.features.telegram_bot !== true;
+  if (
+    enabledDeposit ||
+    enabledTelegram ||
+    faq.some((item, index) => item.a !== tenant.branding.faq[index]?.a)
+  ) {
     await db
       .update(tenants)
       .set({
-        features: { ...tenant.features, deposit: true },
+        features: { ...tenant.features, deposit: true, telegram_bot: true },
         depositSettings: { ...tenant.depositSettings, enabled: true },
         branding: { ...tenant.branding, faq },
         updatedAt: new Date(),
       })
       .where(eq(tenants.id, tenant.id));
-    logger.info({ tenantId: tenant.id }, "Reza deposit flow enabled");
+    logger.info({ tenantId: tenant.id }, "Reza deposit and Telegram flow enabled");
   }
 
   const platformAdmins = await db.query.users.findMany({

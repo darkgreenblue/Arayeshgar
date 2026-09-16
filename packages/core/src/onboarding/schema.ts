@@ -83,7 +83,9 @@ export const onboardingSchema = z.object({
   telegramBotToken: z.string().max(80).optional(),
   baleBotToken: z.string().max(80).optional(),
   // 6) look
-  theme: z.enum(["night-gold", "light-editorial", "bold-modern"]).default("night-gold"),
+  theme: z
+    .enum(["night-gold", "light-editorial", "bold-modern", "night-portrait"])
+    .default("night-gold"),
   primaryColor: z
     .string()
     .regex(/^#[0-9a-fA-F]{6}$/)
