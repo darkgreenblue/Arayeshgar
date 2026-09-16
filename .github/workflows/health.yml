@@ -22,6 +22,7 @@ env:
   PROJ: arayeshgar
   WEB_PORT: "8800"
   BOTS_PORT: "8801"
+  ARVAN_MODE: ${{ secrets.ARAYESHGAR_ARVAN_MODE }}
 
 jobs:
   health:
@@ -45,7 +46,7 @@ jobs:
         run: |
           ssh -i ~/.ssh/health_key -o BatchMode=yes -o ConnectTimeout=20 \
             "$SERVER_USER@$SERVER_HOST" \
-            "PROJ='$PROJ' WEB_PORT='$WEB_PORT' BOTS_PORT='$BOTS_PORT' bash -s" <<'REMOTE'
+            "PROJ='$PROJ' WEB_PORT='$WEB_PORT' BOTS_PORT='$BOTS_PORT' ARVAN_MODE='$ARVAN_MODE' bash -s" <<'REMOTE'
           DIR="$HOME/$PROJ"
 
           # قبل از اولین دیپلوی چیزی برای پایش نیست. سکوت، نه هشدار — وگرنه تا روز
@@ -109,11 +110,19 @@ jobs:
           [ -n "$HAS_BOTS" ] && PORTS="$PORTS $BOTS_PORT"
           for port in $PORTS; do
             L="$(ss -ltn 2>/dev/null | grep ":$port " || true)"
-            case "$L" in
-              *"127.0.0.1:$port"*) note "پورت $port روی loopback" ;;
-              "")                  bad "پورت $port اصلاً گوش نمی‌دهد" ;;
-              *)                   bad "پورت $port روی loopback نیست — روی اینترنت باز است!" ;;
-            esac
+            if [ "$port" = "$WEB_PORT" ] && [ "$ARVAN_MODE" = "true" ]; then
+              case "$L" in
+                *"0.0.0.0:$port"*) note "پورت وب $port برای origin آروان باز است (حالت دمو)" ;;
+                "")                 bad "پورت $port اصلاً گوش نمی‌دهد" ;;
+                *)                  bad "پورت وب $port جای مورد انتظار نیست" ;;
+              esac
+            else
+              case "$L" in
+                *"127.0.0.1:$port"*) note "پورت $port روی loopback" ;;
+                "")                  bad "پورت $port اصلاً گوش نمی‌دهد" ;;
+                *)                   bad "پورت $port روی loopback نیست — روی اینترنت باز است!" ;;
+              esac
+            fi
           done
 
           echo "── جا ──"
