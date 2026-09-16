@@ -151,6 +151,7 @@ jobs:
           CLOUDFLARE_TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
           DEMO_DOMAIN: ${{ secrets.ARAYESHGAR_DEMO_DOMAIN }}
           ARVAN_MODE: ${{ secrets.ARAYESHGAR_ARVAN_MODE }}
+          ARVAN_STRICT_ORIGIN: ${{ secrets.ARAYESHGAR_ARVAN_STRICT_ORIGIN }}
         run: |
           # نامِ سکرتِ خالی چاپ می‌شود، مقدارش هرگز (قاعده‌ی ۵).
           if [ -z "$SESSION_SECRET" ]; then
@@ -166,7 +167,7 @@ jobs:
             exit 1
           fi
           for n in OWNER_TELEGRAM_ID DEMO_TELEGRAM_BOT_TOKEN DEMO_BALE_BOT_TOKEN BASE_DOMAIN \
-                   CLOUDFLARE_TUNNEL_TOKEN DEMO_DOMAIN ARVAN_MODE; do
+                   CLOUDFLARE_TUNNEL_TOKEN DEMO_DOMAIN ARVAN_MODE ARVAN_STRICT_ORIGIN; do
             eval "v=\$$n"
             [ -n "$v" ] || echo "⚠️  سکرتِ خالی (اختیاری، محصول بی‌آن هم بالا می‌آید): $n"
           done
@@ -211,6 +212,7 @@ jobs:
           CLOUDFLARE_TUNNEL_TOKEN=$CLOUDFLARE_TUNNEL_TOKEN
           DEMO_DOMAIN=$DEMO_DOMAIN
           ARVAN_MODE=$ARVAN_MODE
+          ARVAN_STRICT_ORIGIN=${ARVAN_STRICT_ORIGIN:-false}
           ENVFILE
           # فقط تعداد خطوط، هرگز محتوا.
           echo "‏.env ساخته شد ($(wc -l < "$RUNNER_TEMP/env") خط)"
@@ -444,9 +446,10 @@ jobs:
         id: health
         env:
           ARVAN_MODE: ${{ secrets.ARAYESHGAR_ARVAN_MODE }}
+          ARVAN_STRICT_ORIGIN: ${{ secrets.ARAYESHGAR_ARVAN_STRICT_ORIGIN }}
         run: |
           ssh -i ~/.ssh/deploy_key -o BatchMode=yes "$SERVER_USER@$SERVER_HOST" \
-            "PROJ='$PROJ' WEB_PORT='$WEB_PORT' BOTS_PORT='$BOTS_PORT' ARVAN_MODE='$ARVAN_MODE' bash -s" <<'REMOTE'
+            "PROJ='$PROJ' WEB_PORT='$WEB_PORT' BOTS_PORT='$BOTS_PORT' ARVAN_MODE='$ARVAN_MODE' ARVAN_STRICT_ORIGIN='$ARVAN_STRICT_ORIGIN' bash -s" <<'REMOTE'
           DIR="$HOME/$PROJ"
           # فقط چیزی را چک کن که واقعاً بالا آمده. اگر توکن رباتی نبود، ربات‌ها دیپلوی
           # نشده‌اند و انتظار جواب از پورتشان یعنی یک دیپلوی سالم را قرمز کردن.
@@ -504,11 +507,11 @@ jobs:
             fi
             echo "  همه جای موردِ انتظار ✅"
 
-            # ── فایروالِ پورتِ وب در حالتِ آروان: اندازه می‌گیریم، فرض نمی‌کنیم ──
-            # استپِ دیپلوی این قانون را ساخت، ولی «ساختمش» دلیل نمی‌شود که «هست». اگر
-            # به هر دلیلی نبود (خطای sudo، ری‌استارتِ سرور بینِ آن استپ و همین یکی)،
-            # پورتِ ۸۸۰۰ همین الان برای کلِ اینترنت باز است و باید همین‌جا فهمیده شود.
-            if [ "$ARVAN_MODE" = "true" ]; then
+            # ── فایروالِ پورتِ وب در حالتِ سخت‌گیرانهٔ آروان ──
+            # دموی موقت عمداً محدودیت IP را برمی‌دارد، چون فهرست منتشرشدهٔ آروان همهٔ
+            # مبدأهای واقعی را پوشش نمی‌دهد و نتیجه 408/504 تصادفی می‌شود. فقط وقتی
+            # سکرتِ صریح true است، نبودِ DROP خرابی محسوب می‌شود.
+            if [ "$ARVAN_MODE" = "true" ] && [ "$ARVAN_STRICT_ORIGIN" = "true" ]; then
               if sudo iptables -C INPUT -p tcp --dport "$WEB_PORT" -j DROP 2>/dev/null; then
                 echo "  ✅ فایروالِ پورتِ $WEB_PORT: قانونِ DROP برای غیر-آروان هست"
               else
@@ -517,6 +520,8 @@ jobs:
                 pm2 stop "$PROJ-web" "$PROJ-bots" 2>/dev/null || true
                 exit 1
               fi
+            elif [ "$ARVAN_MODE" = "true" ]; then
+              echo "  ⚠️  فایروالِ مبدأ آروان عمداً برای دموی موقت غیرفعال است"
             fi
 
             # ── دمو: خودِ لینک، نه فرضِ اینکه کار می‌کند ──
