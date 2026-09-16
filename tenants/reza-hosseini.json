@@ -46,7 +46,13 @@
     { "weekday": 4, "startMin": 600, "endMin": 1200 },
     { "weekday": 5, "startMin": 600, "endMin": 1200 }
   ],
-  "deposit": { "enabled": true },
+  "deposit": {
+    "enabled": true,
+    "cardNumber": "6219000000000000",
+    "cardHolder": "رضا حسینی",
+    "mode": "fixed",
+    "amount": 100000
+  },
   "theme": "night-portrait",
   "primaryColor": "#7B85E0",
   "fontHeading": "vazirmatn",

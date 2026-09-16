@@ -42,7 +42,7 @@ describe("Reza Hosseini demo reconciliation", () => {
         slug: REZA_HOSSEINI_SLUG,
         name: "رضا حسینی",
         branding: defaultBranding("رضا حسینی"),
-        features: { ...DEFAULT_FEATURES, deposit: false, telegram_bot: true },
+        features: { ...DEFAULT_FEATURES, deposit: false, telegram_bot: false },
         bookingRules: DEFAULT_BOOKING_RULES,
         depositSettings: {
           ...DEFAULT_DEPOSIT_SETTINGS,
@@ -80,6 +80,7 @@ describe("Reza Hosseini demo reconciliation", () => {
 
       const updatedTenant = await db.query.tenants.findFirst({ where: eq(tenants.id, tenant.id) });
       expect(updatedTenant?.features.deposit).toBe(true);
+      expect(updatedTenant?.features.telegram_bot).toBe(true);
       expect(updatedTenant?.depositSettings.enabled).toBe(true);
       const recipients = await adminRecipients(db, updatedTenant!, barber.id);
       expect(recipients).toEqual(
