@@ -27,6 +27,16 @@ set -e
 
 PORT=8800
 
+# The demo is intentionally reachable without a private tunnel. Arvan sometimes uses
+# origin IPs outside the published list below; keeping the old deny rule then produces
+# random 408/504 errors even though the app itself is healthy. Production must set this
+# to true only after verifying every active Arvan origin range.
+STRICT_ORIGIN="${ARVAN_STRICT_ORIGIN:-false}"
+case "$STRICT_ORIGIN" in
+  true|false) ;;
+  *) echo "ARVAN_STRICT_ORIGIN باید true یا false باشد" >&2; exit 2 ;;
+esac
+
 # ArvanCloud's own published CDN edge IPv4 ranges — fetched from
 # https://www.arvancloud.ir/en/ips.txt by the owner directly (that URL blocks automated
 # fetches from this project's CI/agent environment) on 1405/06/24 (2026-09-15). This list
@@ -65,6 +75,12 @@ done
 # the DROP. `-i lo` scopes this to the loopback interface only, so it does not also open
 # the port to spoofed source IPs arriving from the real network.
 sudo iptables -A INPUT -i lo -p tcp --dport "$PORT" -j ACCEPT
+
+if [ "$STRICT_ORIGIN" != "true" ]; then
+  echo "فایروال پورت $PORT: حالت دمو؛ محدودیت IP آروان غیرفعال است"
+  echo "برای نسخهٔ اصلی ARVAN_STRICT_ORIGIN=true بگذارید و فهرست CIDRها را دوباره تأیید کنید."
+  exit 0
+fi
 
 # Rebuild in the correct order: every allowed range first, the catch-all DROP last.
 for cidr in "${CIDRS[@]}"; do
