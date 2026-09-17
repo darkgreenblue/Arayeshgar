@@ -43,9 +43,12 @@ export class MockApi {
       } else if (raw.length) {
         // multipart (sendPhoto): capture the text fields we care about
         const text = raw.toString("latin1");
-        for (const field of ["chat_id", "caption"]) {
+        for (const field of ["chat_id", "caption", "reply_markup"]) {
           const m = new RegExp(`name="${field}"\\r\\n\\r\\n([^\\r]*)`).exec(text);
-          if (m) body[field] = Buffer.from(m[1]!, "latin1").toString("utf8");
+          if (m) {
+            const value = Buffer.from(m[1]!, "latin1").toString("utf8");
+            body[field] = field === "reply_markup" ? JSON.parse(value) : value;
+          }
         }
         body._multipart = true;
       }
