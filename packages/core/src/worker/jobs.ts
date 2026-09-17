@@ -1,7 +1,7 @@
 /**
  * Periodic jobs. Each is idempotent and safe to run from several processes.
  */
-import { and, eq, inArray, isNull, lt, lte, gte } from "drizzle-orm";
+import { and, eq, inArray, isNull, lt, lte, gte, sql } from "drizzle-orm";
 import type { Db } from "@arayeshgar/db";
 import { bookings, tenants } from "@arayeshgar/db";
 import { logger } from "../logger";
@@ -14,10 +14,19 @@ import { tenantPublicUrl, getEnv } from "../env";
 
 /** pending_payment bookings past their deadline -> expired (slot freed) + customer notified. */
 export async function expireBookings(db: Db, now = new Date()): Promise<number> {
+  // SQLite stores `mode: "timestamp"` as a Unix timestamp in seconds. Passing a JavaScript
+  // Date through the libSQL driver made this comparison an integer-to-text comparison, which
+  // SQLite considers true for every pending payment. Bind a numeric Unix timestamp explicitly.
+  const nowEpochSeconds = Math.floor(now.getTime() / 1_000);
   const due = await db
     .select({ id: bookings.id, tenantId: bookings.tenantId })
     .from(bookings)
-    .where(and(eq(bookings.status, "pending_payment"), lt(bookings.expiresAt, now)))
+    .where(
+      and(
+        eq(bookings.status, "pending_payment"),
+        sql`${bookings.expiresAt} < ${nowEpochSeconds}`,
+      ),
+    )
     .limit(200);
   let n = 0;
   for (const b of due) {
