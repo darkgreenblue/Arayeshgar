@@ -24,16 +24,16 @@ rm -rf "$OUT"
 mkdir -p "$OUT"
 
 # ── web ────────────────────────────────────────────────────────────────────────────────
-# The standalone tree is copied whole and unmodified. Next traces its dependencies and
-# writes paths relative to the tree's own root, so moving pieces inside it (say, hoisting
-# apps/web up a level) breaks resolution. Hence `web/apps/web/server.js` in
-# ecosystem.config.cjs — ugly, but it is the path that actually works.
+# The standalone tree is copied whole without changing its layout. Next traces its
+# dependencies and writes paths relative to the tree's own root, so moving pieces inside
+# it breaks resolution. Public asset URLs alone are renamed below to avoid a block-page.
 cp -a "$STANDALONE" "$OUT/web"
 # `next build` deliberately leaves these two out of standalone; without them the pages
 # render with no CSS or JS and every image 404s.
 mkdir -p "$OUT/web/apps/web/.next"
 cp -a "$ROOT/apps/web/.next/static" "$OUT/web/apps/web/.next/static"
 [ -d "$ROOT/apps/web/public" ] && cp -a "$ROOT/apps/web/public" "$OUT/web/apps/web/public"
+node "$ROOT/tools/rewrite-public-chunks.mjs" "$OUT/web/apps/web/.next"
 
 # ── bots ───────────────────────────────────────────────────────────────────────────────
 mkdir -p "$OUT/bots"
