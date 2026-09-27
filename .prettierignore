@@ -7,3 +7,7 @@ packages/db/drizzle/meta
 # سند قرارداد زیرساخت مشترک: عیناً از منبع کپی می‌شود.
 # فرمت کردنش ۲۰۰ خط جدول را بازچینی می‌کند و هر همگام‌سازی بعدی را پر از دیف بی‌معنی.
 PLATFORM.md
+
+# اسکیل persian-writing عیناً از github.com/ali2000hos/persian-writing کپی شده.
+# فرمت کردنش هر به‌روزرسانی بعدی از منبع را پر از دیف بی‌معنی می‌کند.
+.claude/skills/persian-writing
