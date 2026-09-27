@@ -29,6 +29,12 @@
 - منطق دامنه در core تست واحد دارد؛ موتور رزرو تست یکپارچه با Postgres واقعی (تست همزمانی دوبل‌بوک الزامی است).
 - تست‌های یکپارچه اگر `DATABASE_URL` نبود خودشان skip می‌شوند.
 
+## طراحی و انیمیشن
+
+- هر کار UI در `apps/web` از اسکیل‌های امیل کوالسکی (`.claude/skills/`) استفاده می‌کند: پایه `emil-design-eng`، موبایل `mobile-native`، ساخت حرکت `animate`، بازبینی `/review-animations`. تصمیم مالک؛ جزئیات و جدول تعارض‌ها در `docs/DESIGN-SKILLS.md`.
+- قواعد فارسی/RTL (`barbershop-design`) بر اسکیل‌های امیل مقدم‌اند: `letter-spacing` صفر، `line-height` تیتر ≥ ۱.۴ و متن ≥ ۱.۸، حرکت افقی در RTL آینه.
+- بازبینیِ UI با جدول `| قبل | بعد | چرا |`.
+
 ## Git
 
 - Conventional Commits: `feat(core): ...`, `fix(bots): ...`, `docs: ...`, `chore: ...`.
