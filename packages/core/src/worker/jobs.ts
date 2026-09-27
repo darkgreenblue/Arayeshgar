@@ -1,7 +1,7 @@
 /**
  * Periodic jobs. Each is idempotent and safe to run from several processes.
  */
-import { and, eq, inArray, isNull, lt, lte, gte, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, lte, gte, sql } from "drizzle-orm";
 import type { Db } from "@arayeshgar/db";
 import { bookings, tenants } from "@arayeshgar/db";
 import { logger } from "../logger";
