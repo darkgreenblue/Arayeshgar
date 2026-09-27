@@ -282,8 +282,14 @@ describe("bot flows against a mock Bot API", () => {
     expect(photo).toBeTruthy();
     expect(String(photo!.body.caption)).toContain("رسید بیعانه");
 
-    // admin approves from the chat
-    await hook(f.tenant, upd.callback(encode({ a: "approve", b: shortId(booking.id) }), 9001));
+    // The notification renderer uses a platform-neutral `bk:approve:<uuid>` reference.
+    // The delivery boundary must convert it to the bot's compact callback codec, then the
+    // exact button delivered to Telegram must be sufficient to approve the booking.
+    const approveCb = (
+      photo!.body.reply_markup as { inline_keyboard: { callback_data: string }[][] }
+    ).inline_keyboard[0]![0]!.callback_data;
+    expect(approveCb).toBe(encode({ a: "approve", b: shortId(booking.id) }));
+    await hook(f.tenant, upd.callback(approveCb, 9001));
     const confirmed = await db.query.bookings.findFirst({
       where: eq(schema.bookings.id, booking.id),
     });

@@ -310,6 +310,26 @@ describe("booking engine (SQLite)", () => {
     expect(kinds).toContain("receipt_submitted");
   });
 
+  it("does not expire a deposit reservation before its payment deadline", async () => {
+    const f = await fx({ deposit: true });
+    const r = await createBooking(db, {
+      tenant: f.tenant,
+      staffId: f.staffId,
+      serviceId: f.serviceId,
+      startAt: tomorrowAt(16),
+      customer: { name: "مریم", phone: "09120000013" },
+      source: "web",
+    });
+    expect(r.expiresAt!.getTime()).toBeGreaterThan(Date.now());
+
+    await expireBookings(db);
+
+    const fresh = await db.query.bookings.findFirst({
+      where: eq(bookings.id, r.bookingId),
+    });
+    expect(fresh!.status).toBe("pending_payment");
+  });
+
   it("rejecting a receipt frees the slot; expiry frees the slot and blocks late receipts", async () => {
     const f = await fx({ deposit: true });
     const start = tomorrowAt(16);
