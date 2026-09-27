@@ -22,10 +22,7 @@ export async function expireBookings(db: Db, now = new Date()): Promise<number> 
     .select({ id: bookings.id, tenantId: bookings.tenantId })
     .from(bookings)
     .where(
-      and(
-        eq(bookings.status, "pending_payment"),
-        sql`${bookings.expiresAt} < ${nowEpochSeconds}`,
-      ),
+      and(eq(bookings.status, "pending_payment"), sql`${bookings.expiresAt} < ${nowEpochSeconds}`),
     )
     .limit(200);
   let n = 0;
