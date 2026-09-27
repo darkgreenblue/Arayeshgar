@@ -7,3 +7,19 @@ packages/db/drizzle/meta
 # سند قرارداد زیرساخت مشترک: عیناً از منبع کپی می‌شود.
 # فرمت کردنش ۲۰۰ خط جدول را بازچینی می‌کند و هر همگام‌سازی بعدی را پر از دیف بی‌معنی.
 PLATFORM.md
+
+# اسکیل‌های امیل کوالسکی (MIT): عیناً از github.com/emilkowalski/skills کپی می‌شوند، به همان دلیل PLATFORM.md.
+# قواعد مخصوص این پروژه در docs/DESIGN-SKILLS.md است، نه در این فایل‌ها.
+.claude/skills/animate
+.claude/skills/animate-expo
+.claude/skills/animation-vocabulary
+.claude/skills/apple-design
+.claude/skills/ask-sonner
+.claude/skills/emil-design-eng
+.claude/skills/find-animation-opportunities
+.claude/skills/improve-animations
+.claude/skills/mobile-native
+.claude/skills/pick-ui-library
+.claude/skills/prototype
+.claude/skills/review-animations
+.claude/skills/write-swift

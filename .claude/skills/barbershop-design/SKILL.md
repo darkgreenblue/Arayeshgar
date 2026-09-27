@@ -6,10 +6,21 @@ license: Proprietary — internal to Arayeshgar
 
 # Barbershop design (Persian, RTL)
 
-Read `/mnt/skills/public/frontend-design/SKILL.md` first and follow it. It covers what makes
-any page distinctive rather than templated. **This skill is only the delta**: what changes
-because the language is Persian, the direction is RTL, and the client is one specific
-barbershop who was told "we made this for you."
+This skill sits on top of two base layers. Read both first, then `docs/DESIGN-SKILLS.md`, which
+records how they are layered and where they conflict (owner decision, 1405/07/05):
+
+1. **Emil Kowalski's skills** (`.claude/skills/emil-design-eng/SKILL.md`, plus `animate`,
+   `mobile-native`, `apple-design` when the work needs them) — the default for motion,
+   interaction, polish, mobile feel and UI review. They replaced Claude's general design
+   mindset for all of that.
+2. `/mnt/skills/public/frontend-design/SKILL.md` — **only** for choosing a distinctive visual
+   direction per tenant (palette, typefaces, layout). Where Emil has a rule, Emil wins.
+
+**This skill is only the delta**, and it outranks both: what changes because the language is
+Persian, the direction is RTL, and the client is one specific barbershop who was told "we made
+this for you." In particular, `apple-design`'s size-specific tracking and `line-height: 1.05`
+display type are wrong for Persian (see below), and every horizontal motion in Emil's recipes
+(left-to-right reveals, side slides, horizontal swipes) must be mirrored for RTL.
 
 ## Why this product fails differently
 
