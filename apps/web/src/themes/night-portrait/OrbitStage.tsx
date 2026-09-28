@@ -198,7 +198,7 @@ export function OrbitStage({ images }: { images: string[] }) {
         className="absolute inset-0 cursor-grab touch-pan-y active:cursor-grabbing [&>canvas]:block"
         aria-hidden="true"
       />
-      <div className="pointer-events-none absolute right-3 bottom-4 z-10 flex items-center gap-2 rounded-full bg-black/55 px-3 py-1.5 text-[10px] text-white/90 backdrop-blur-sm sm:inset-x-0 sm:right-auto sm:bottom-5 sm:justify-center sm:gap-3 sm:bg-transparent sm:text-xs sm:backdrop-blur-none">
+      <div className="pointer-events-none absolute top-8 right-3 z-10 flex items-center gap-2 rounded-full bg-black/55 px-3 py-1.5 text-[10px] text-white/90 backdrop-blur-sm sm:inset-x-0 sm:top-auto sm:right-auto sm:bottom-5 sm:justify-center sm:gap-3 sm:bg-transparent sm:text-xs sm:backdrop-blur-none">
         <span className="hidden sm:inline">موس را حرکت دهید؛ برای چرخش بکشید</span>
         <span className="sm:hidden">عکس‌ها را بکشید</span>
         <span className="hidden h-px w-9 bg-[#a5a9ff] sm:inline-block" />
