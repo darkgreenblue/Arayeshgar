@@ -16,6 +16,7 @@ export async function generateMetadata(): Promise<Metadata> {
       description: b.tagline ?? undefined,
       images: b.heroImageUrl ? [b.heroImageUrl] : undefined,
     },
+    icons: b.logoUrl ? { icon: b.logoUrl } : undefined,
   };
 }
 
