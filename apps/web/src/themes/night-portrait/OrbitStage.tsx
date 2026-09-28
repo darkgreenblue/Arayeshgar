@@ -136,9 +136,9 @@ export function OrbitStage({ images }: { images: string[] }) {
     resize();
 
     let frameId = 0;
-    const clock = new THREE.Clock();
+    const startedAt = performance.now();
     const render = () => {
-      const elapsed = clock.getElapsedTime();
+      const elapsed = (performance.now() - startedAt) / 1000;
       const targetY = pointerX * 0.28 + targetDrag;
       orbit.rotation.y += (targetY - orbit.rotation.y) * 0.065;
       orbit.rotation.x += (-pointerY * 0.13 - orbit.rotation.x) * 0.065;
@@ -203,7 +203,7 @@ export function OrbitStage({ images }: { images: string[] }) {
         <span className="sm:hidden">عکس‌ها را بکشید</span>
         <span className="hidden h-px w-9 bg-[#a5a9ff] sm:inline-block" />
       </div>
-      <div className="absolute bottom-3 left-3 z-20 flex gap-2 sm:bottom-5 sm:left-5">
+      <div className="absolute bottom-3 left-3 z-20 flex gap-2 sm:bottom-5 sm:left-5 lg:left-[calc(7vw+1.25rem)]">
         <button
           type="button"
           onClick={() => rotate(-1)}
