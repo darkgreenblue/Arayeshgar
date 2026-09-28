@@ -41,7 +41,8 @@ describe("Reza Hosseini demo reconciliation", () => {
       .values({
         slug: REZA_HOSSEINI_SLUG,
         name: "رضا حسینی",
-        branding: defaultBranding("رضا حسینی"),
+        branding: { ...defaultBranding("رضا حسینی"), primaryColor: "#7b00bd" },
+        theme: "bold-modern",
         features: { ...DEFAULT_FEATURES, deposit: false, telegram_bot: false },
         bookingRules: DEFAULT_BOOKING_RULES,
         depositSettings: {
@@ -82,6 +83,8 @@ describe("Reza Hosseini demo reconciliation", () => {
       expect(updatedTenant?.features.deposit).toBe(true);
       expect(updatedTenant?.features.telegram_bot).toBe(true);
       expect(updatedTenant?.depositSettings.enabled).toBe(true);
+      expect(updatedTenant?.theme).toBe("night-portrait");
+      expect(updatedTenant?.branding.primaryColor).toBe("#7B85E0");
       const recipients = await adminRecipients(db, updatedTenant!, barber.id);
       expect(recipients).toEqual(
         expect.arrayContaining([
@@ -100,6 +103,11 @@ describe("Reza Hosseini demo reconciliation", () => {
         enabledDeposit: true,
         linkedAdmins: 2,
       });
+      await db.update(tenants).set({ theme: "light-editorial" }).where(eq(tenants.id, tenant.id));
+      await reconcileRezaDemo(db);
+      expect((await db.query.tenants.findFirst({ where: eq(tenants.id, tenant.id) }))?.theme).toBe(
+        "light-editorial",
+      );
       const otherPlatformRows = await db.query.users.findMany({
         where: and(isNull(users.tenantId), eq(users.role, "platform_admin")),
       });

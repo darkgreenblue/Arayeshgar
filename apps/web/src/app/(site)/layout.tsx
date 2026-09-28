@@ -39,7 +39,9 @@ export default async function SiteLayout({ children }: { children: ReactNode }) 
       {children}
       {r.tenant.status === "demo" && (
         // برند خودِ مستاجر، نه رنگ ثابت — و بدون نام داخلیِ تم، که برای مشتری بی‌معنی است.
-        <div className="fixed bottom-0 start-0 z-50 m-2 rounded-lg bg-[var(--brand)] px-2 py-0.5 text-[11px] font-bold text-[var(--brand-contrast)] shadow">
+        <div
+          className={`fixed start-0 z-50 m-2 rounded-lg bg-[var(--brand)] px-2 py-0.5 text-[11px] font-bold shadow ${theme === "night-portrait" ? "bottom-20 text-[#0b0b0f] sm:bottom-0" : "bottom-0 text-[var(--brand-contrast)]"}`}
+        >
           نسخه نمایشی
         </div>
       )}

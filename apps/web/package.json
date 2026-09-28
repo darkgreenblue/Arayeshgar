@@ -28,6 +28,7 @@
     "react-dom": "^19.2.0",
     "sahel-font": "^3.4.0",
     "tailwind-merge": "^2.6.0",
+    "three": "^0.186.1",
     "zod": "^4.5.4"
   },
   "devDependencies": {
@@ -35,6 +36,7 @@
     "@tailwindcss/postcss": "^4.1.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
+    "@types/three": "^0.186.0",
     "tailwindcss": "^4.1.0",
     "typescript": "~5.9.0",
     "vitest": "^4.0.0"
