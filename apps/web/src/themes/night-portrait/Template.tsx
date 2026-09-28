@@ -5,10 +5,11 @@
 import Link from "next/link";
 import type { SiteContent } from "@arayeshgar/core";
 import { isEnabled } from "@arayeshgar/core/features/registry";
-import { formatToman, toPersianDigits } from "@arayeshgar/core/utils/phone";
+import { toPersianDigits } from "@arayeshgar/core/utils/phone";
 import type { ShellProps } from "..";
 import { NightPortraitHero } from "./Hero";
 import { PortfolioGallery } from "./PortfolioGallery";
+import { ServicePortal } from "./ServicePortal";
 import { Faq, Hours, StaffGrid, StickyBookBar } from "../sections";
 
 const surface = "bg-[#0b0b0f] text-[#f2f1f6] [--surface:#0b0b0f] [--brand-contrast:#0b0b0f]";
@@ -89,46 +90,24 @@ export function NightPortrait({ content }: { content: SiteContent }) {
         )}
 
         {content.services.length > 0 && (
-          <section id="services" className="scroll-mt-24 bg-[#15151b] py-16 sm:py-24">
+          <section
+            id="services"
+            className="scroll-mt-24 overflow-hidden border-t border-white/10 bg-[#15151b] py-16 sm:py-28"
+          >
             <div className="mx-auto max-w-7xl px-5 sm:px-8">
-              <div className="mb-9 flex flex-wrap items-end justify-between gap-4">
-                <h2 className="font-heading text-3xl font-[760] sm:text-5xl">خدمات و قیمت‌ها</h2>
-                <p className="max-w-sm text-sm text-[#b9b7c4]">
-                  خدمت موردنظرتان را انتخاب کنید و وقت‌های خالی را ببینید.
+              <div className="mb-12 grid items-end gap-6 lg:grid-cols-[1fr_auto]">
+                <div>
+                  <p className="mb-3 text-xs font-[800] text-[#aab1ff]">خدمات و قیمت‌ها / ۰۳</p>
+                  <h2 className="font-heading text-[clamp(3rem,6vw,6rem)] leading-[1.3] font-[850]">
+                    حالا نوبت شماست.
+                  </h2>
+                </div>
+                <p className="max-w-sm text-sm leading-8 text-[#b9b7c4]">
+                  خدمت دلخواهتان را انتخاب کنید تا وقت‌های خالی را ببینید. قاب‌ها از نمونه‌کارهای
+                  واقعی رضا هستند.
                 </p>
               </div>
-              <ul className="border-t border-white/15">
-                {content.services.map((service) => (
-                  <li key={service.id} className="border-b border-white/15">
-                    <Link
-                      href={`/book?service=${service.id}`}
-                      className="group grid min-h-28 gap-x-8 gap-y-2 py-6 transition-colors hover:bg-white/[.035] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand)] sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:px-4"
-                    >
-                      <span>
-                        <span className="block font-heading text-xl font-[700] sm:text-2xl">
-                          {service.name}
-                        </span>
-                        {service.description && (
-                          <span className="mt-1 block text-sm text-[#b9b7c4]">
-                            {service.description}
-                          </span>
-                        )}
-                        <span className="mt-1 block text-xs text-[#b9b7c4]">
-                          {toPersianDigits(service.durationMin)} دقیقه
-                        </span>
-                      </span>
-                      <span className="flex items-center justify-between gap-8 sm:justify-end">
-                        <span className="fa-nums whitespace-nowrap font-[700] text-[var(--brand)]">
-                          {formatToman(service.price)}
-                        </span>
-                        <span className="text-sm text-[#c7c5d1] underline-offset-4 group-hover:underline">
-                          انتخاب وقت
-                        </span>
-                      </span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
+              <ServicePortal services={content.services} gallery={b.gallery} />
               <p className="mt-5 text-xs text-[#aaa8b7]">
                 قیمت‌ها در این نسخه برای نمایش فرایند رزرو درج شده‌اند.
               </p>
