@@ -59,21 +59,31 @@ export async function reconcileRezaDemo(db: Db): Promise<RezaDemoResult> {
   const enabledDeposit =
     tenant.features.deposit !== true || tenant.depositSettings.enabled !== true;
   const enabledTelegram = tenant.features.telegram_bot !== true;
+  // The live Reza demo predates the committed portrait theme. Migrate only its known legacy
+  // theme/color pair; a later design choice made in the admin panel must not be overwritten.
+  const migrateLegacyDesign =
+    tenant.theme === "bold-modern" && tenant.branding.primaryColor.toLowerCase() === "#7b00bd";
   if (
     enabledDeposit ||
     enabledTelegram ||
+    migrateLegacyDesign ||
     faq.some((item, index) => item.a !== tenant.branding.faq[index]?.a)
   ) {
     await db
       .update(tenants)
       .set({
+        theme: migrateLegacyDesign ? "night-portrait" : tenant.theme,
         features: { ...tenant.features, deposit: true, telegram_bot: true },
         depositSettings: { ...tenant.depositSettings, enabled: true },
-        branding: { ...tenant.branding, faq },
+        branding: {
+          ...tenant.branding,
+          faq,
+          ...(migrateLegacyDesign ? { primaryColor: "#7B85E0" } : {}),
+        },
         updatedAt: new Date(),
       })
       .where(eq(tenants.id, tenant.id));
-    logger.info({ tenantId: tenant.id }, "Reza deposit and Telegram flow enabled");
+    logger.info({ tenantId: tenant.id, migrateLegacyDesign }, "Reza demo settings reconciled");
   }
 
   const platformAdmins = await db.query.users.findMany({
